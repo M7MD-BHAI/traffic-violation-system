@@ -251,3 +251,108 @@ FastAPI     ──▶  WebSocket ──▶ React frontend
 | M7 — ANPR | ⬜ Pending |
 | M8 — Auth | ⬜ Pending |
 | M9 — Frontend | ⬜ Pending |
+
+
+
+## YOLO Model Architecture
+
+This system uses THREE YOLO models with clearly separated responsibilities.  
+All custom models are **already trained and ready for use**.
+
+---
+
+### 1. YOLOv8n — Vehicle Detection & Tracking (Primary Model)
+
+- Model: YOLOv8n (nano)
+- Weights: `yolov8n.pt` (auto-downloaded)
+- Training: ❌ Not required
+- Dataset: COCO (pre-trained)
+
+#### Purpose
+Detect all vehicles in every frame and provide bounding boxes for:
+- cars
+- motorcycles
+- buses
+- trucks
+
+Also works with **BoT-SORT tracker** to assign a unique `track_id` to each vehicle.
+
+#### Responsibility
+- Runs on EVERY frame (~30 FPS)
+- Feeds all downstream modules
+- Acts as the **main detection backbone**
+
+---
+
+### 2. YOLOv8n — Helmet Detection Model
+
+- Model: YOLOv8n (nano)
+- Weights: `best.pt` ✅ (already trained)
+- Training: ❌ Not required (pre-trained by developer)
+- Classes: `helmet`, `bare_head`
+
+#### Purpose
+Determine whether a rider is wearing a helmet.
+
+#### How it works
+- Takes **ROI (Region of Interest)** from primary detection
+- Specifically:
+  → top 25% of motorcycle bounding box (head zone)
+- Runs classification on that cropped region
+
+#### Trigger Condition
+- Only runs when a **motorcycle/bike** is detected
+
+#### Note
+This model has been **custom trained by the developer using Google Colab** and is production-ready.
+
+---
+
+### 3. YOLOv8n — ANPR License Plate Detection
+
+- Model: YOLOv8n (nano)
+- Weights: `last.pt` ✅ (already trained)
+- Training: ❌ Not required (pre-trained by developer)
+- Classes: `license_plate`
+
+#### Purpose
+Detect license plate region for OCR processing.
+
+#### How it works
+- Runs on cropped vehicle image
+- Outputs bounding box around plate
+- Then **EasyOCR** extracts text
+
+#### Trigger Condition
+- Runs ONLY when a violation is detected
+  (red light, helmet, speeding, etc.)
+
+#### Note
+This model has been **custom trained by the developer using Google Colab** and is ready for inference.
+
+---
+
+## Execution Pipeline
+
+1. **YOLOv8n (Primary Model)** runs on every frame
+2. BoT-SORT assigns `track_id`
+3. Modules process detections:
+   - Helmet Module → uses `best.pt`
+   - Speed Module → uses tracking data
+   - Red Light Module → uses geometry + tracking
+4. If violation detected:
+   → Trigger ANPR Model (`last.pt`)
+   → Run EasyOCR on detected plate
+5. Store results in database
+
+---
+
+## Model Loading Rules
+
+- All models must be loaded ONLY in `yolo_loader.py`
+- Models must be implemented as **singletons**
+- No module should directly initialize YOLO models
+- Model paths must come from environment variables:
+  - `YOLO_PRIMARY_MODEL_PATH`
+  - `YOLO_HELMET_MODEL_PATH`
+  - `YOLO_PLATE_MODEL_PATH`
