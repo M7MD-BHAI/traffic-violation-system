@@ -1,0 +1,9 @@
+{
+  "violation_line": [[0, 0], [640, 0]],
+  "signal_roi": [[0, 0], [100, 100]],
+  "resolution": [640, 360],
+  "speed_line_a_y": 150,
+  "speed_line_b_y": 300,
+  "meters_per_pixel": 0.05,
+  "_note": "Run python -m backend.app.utils.line_selector to recalibrate"
+}
