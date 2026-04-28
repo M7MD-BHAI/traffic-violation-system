@@ -42,7 +42,7 @@ Real-time traffic violation detection (red light, helmet, speed) with ANPR, acci
 | M5 | Vehicle Counter | Count and classify vehicles crossing stop-line | ⬜ Pending |
 | M6 | Accident Detector | Detect crashes via IoU overlap + stagnation heuristic | ⬜ Pending |
 | M7 | ANPR Service | Triggered plate detection + EasyOCR (idle until violation) | ⬜ Pending |
-| M8 | Auth | JWT login, user roles, protected routes | ⬜ Pending |
+| M8 | Auth | JWT login, user roles, protected routes | ✅ Done |
 | M9 | Dashboard | React analytics UI with live WebSocket updates | ⬜ Pending |
 
 ---
@@ -249,7 +249,7 @@ FastAPI     ──▶  WebSocket ──▶ React frontend
 | M5 — Counter | ⬜ Pending |
 | M6 — Accident | ⬜ Pending |
 | M7 — ANPR | ⬜ Pending |
-| M8 — Auth | ⬜ Pending |
+| M8 — Auth | ✅ Done |
 | M9 — Frontend | ⬜ Pending |
 
 
@@ -356,3 +356,14 @@ This model has been **custom trained by the developer using Google Colab** and i
   - `YOLO_PRIMARY_MODEL_PATH`
   - `YOLO_HELMET_MODEL_PATH`
   - `YOLO_PLATE_MODEL_PATH`
+
+
+
+  ## Integration Note
+
+If implementing any module requires changes in other modules, those changes must be:
+- minimal and strictly necessary
+- backward compatible
+- limited to only affected logic
+
+All cross-module changes must be clearly documented during implementation. You have complete access to each and every folder and file do changes where required.
