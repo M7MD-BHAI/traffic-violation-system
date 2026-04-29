@@ -35,15 +35,15 @@ Real-time traffic violation detection (red light, helmet, speed) with ANPR, acci
 
 | # | Module | Purpose | Status |
 |---|---|---|---|
-| M1 | Red Light Violation | Detect stop-line crossings during RED signal | ⬜ Pending |
-| M2 | Helmet Violation | Detect bare-head riders via head-zone ROI + voting | ⬜ Pending |
-| M3 | Speed Estimation | Measure speed via mini-box centroid + cache matrix | ⬜ Pending |
-| M4 | Congestion Manager | Calculate road density index + smart signal timing | ⬜ Pending |
-| M5 | Vehicle Counter | Count and classify vehicles crossing stop-line | ⬜ Pending |
+| M1 | Red Light Violation | Detect stop-line crossings during RED signal | ✅ Done |
+| M2 | Helmet Violation | Detect bare-head riders via head-zone ROI + voting | ✅ Done |
+| M3 | Speed Estimation | Measure speed via mini-box centroid + cache matrix | ✅ Done |
+| M4 | Congestion Manager | Calculate road density index + smart signal timing | ✅ Done |
+| M5 | Vehicle Counter | Count and classify vehicles crossing stop-line | ✅ Done |
 | M6 | Accident Detector | Detect crashes via IoU overlap + stagnation heuristic | ⬜ Pending |
-| M7 | ANPR Service | Triggered plate detection + EasyOCR (idle until violation) | ⬜ Pending |
+| M7 | ANPR Service | Triggered plate detection + EasyOCR (idle until violation) | ✅ Done |
 | M8 | Auth | JWT login, user roles, protected routes | ✅ Done |
-| M9 | Dashboard | React analytics UI with live WebSocket updates | ⬜ Pending |
+| M9 | Dashboard | React analytics UI with live WebSocket updates | 🟡 In Progress |
 
 ---
 
@@ -242,15 +242,83 @@ FastAPI     ──▶  WebSocket ──▶ React frontend
 
 | Module | Status |
 |---|---|
-| M1 — Red Light | ⬜ Pending |
-| M2 — Helmet | ⬜ Pending |
-| M3 — Speed | ⬜ Pending |
-| M4 — Congestion | ⬜ Pending |
-| M5 — Counter | ⬜ Pending |
+| M1 — Red Light | ✅ Done |
+| M2 — Helmet | ✅ Done |
+| M3 — Speed | ✅ Done |
+| M4 — Congestion | ✅ Done |
+| M5 — Counter | ✅ Done |
 | M6 — Accident | ⬜ Pending |
-| M7 — ANPR | ⬜ Pending |
+| M7 — ANPR | ✅ Done |
 | M8 — Auth | ✅ Done |
-| M9 — Frontend | ⬜ Pending |
+| M9 — Frontend | 🟡 In Progress |
+
+---
+
+## Backend Infrastructure (Completed)
+
+| File | Status |
+|---|---|
+| `database/models.py` — all 7 SQLAlchemy 2.0 models | ✅ Done |
+| `database/connection.py` — engine, SessionLocal, get_db | ✅ Done |
+| `config.py` — Pydantic BaseSettings, all env vars | ✅ Done |
+| `main.py` — FastAPI app, CORS, lifespan, all routers mounted | ✅ Done |
+| `detection/yolo_loader.py` — 3 singleton YOLO models | ✅ Done |
+| `detection/tracking/vehicle_tracker.py` — BoT-SORT wrapper | ✅ Done |
+| `detection/tracking/vehicle_history.py` — shared speed_map + y_prev | ✅ Done |
+| `utils/geometry.py` — centroid, IoU, point_in_polygon, line_crossing | ✅ Done |
+
+## Schemas (Completed)
+
+| File | Status |
+|---|---|
+| `schemas/auth.py` — LoginRequest, RegisterRequest, TokenOut, UserOut | ✅ Done |
+| `schemas/violation.py` — ViolationCreate, ViolationOut | ✅ Done |
+| `schemas/anpr.py` — PlateResultOut | ✅ Done |
+| `schemas/vehicle.py` — VehicleOut, CountingReportCreate, CountingReportOut | ✅ Done |
+| `schemas/accident.py` — AccidentAlert, AccidentOut | ✅ Done |
+| `schemas/signal.py` — CongestionUpdate, SignalStateUpdate, OptimisationResult | ✅ Done |
+
+## CRUD (Completed)
+
+| File | Status |
+|---|---|
+| `crud/users.py` — get_by_username, get_by_id, create_user, verify_password | ✅ Done |
+| `crud/violations.py` — insert, get, list (filtered), update_plate, delete | ✅ Done |
+| `crud/anpr.py` — save_plate_result, get_plate_by_track, search_by_plate_text | ✅ Done |
+| `crud/vehicles.py` — get_vehicles, save_counting_report, get_latest_counts | ✅ Done |
+| `crud/accidents.py` — save_alert, get_alerts, resolve_alert | ✅ Done |
+| `crud/signals.py` — save_congestion_snapshot, get_congestion_history | ✅ Done |
+
+## Routes (Completed)
+
+| File | Status |
+|---|---|
+| `routes/auth.py` — POST /auth/login\|register, GET /auth/me | ✅ Done |
+| `routes/violations.py` — POST/GET/DELETE violations | ✅ Done |
+| `routes/anpr.py` — GET /anpr/{track_id}, /anpr/search | ✅ Done |
+| `routes/vehicles.py` — GET /vehicles, /analytics/counting | ✅ Done |
+| `routes/accidents.py` — POST/GET /alerts/accident, PATCH resolve | ✅ Done |
+| `routes/signals.py` — POST/GET /congestion endpoints | ✅ Done |
+| `routes/optimization.py` — WS /congestion/ws | ✅ Done |
+
+## Frontend (In Progress)
+
+| File | Status |
+|---|---|
+| `services/api.js` — Axios instance, JWT interceptor, all API functions | ✅ Done |
+| `pages/Login.jsx` — Tailwind login form, token storage, redirect | ✅ Done |
+| `pages/Dashboard.jsx` | ⬜ Pending |
+| `pages/Violations.jsx` | ⬜ Pending |
+| `pages/LiveFeed.jsx` | ⬜ Pending |
+| `pages/Accidents.jsx` | ⬜ Pending |
+| `pages/Optimization.jsx` | ⬜ Pending |
+| `pages/ANPR.jsx` | ⬜ Pending |
+| `pages/Settings.jsx` | ⬜ Pending |
+| `components/Navbar.jsx` | ⬜ Pending |
+| `components/ViolationCard.jsx` | ⬜ Pending |
+| `components/SignalControl.jsx` | ⬜ Pending |
+| `App.jsx` — Router + protected routes | ⬜ Pending |
+| `index.js` — React entry point | ⬜ Pending |
 
 
 
