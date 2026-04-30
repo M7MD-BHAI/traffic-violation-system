@@ -58,3 +58,17 @@ def line_crossing_check(
 ) -> bool:
     """Return True when a track crosses line_y from above in the downward direction."""
     return y_prev < line_y and y_curr >= line_y and (y_curr - y_prev) > 0
+
+
+def get_centroid(box: list[float]) -> tuple[float, float]:
+    x1, y1, x2, y2 = box
+    return (x1 + x2) / 2, (y1 + y2) / 2
+
+
+def get_bottom_centre(box: list[float]) -> tuple[float, float]:
+    x1, _y1, x2, y2 = box
+    return (x1 + x2) / 2, y2
+
+
+def is_near_line(cy: float, line_y: float, margin: float = 40.0) -> bool:
+    return abs(cy - line_y) < margin
