@@ -314,11 +314,11 @@ FastAPI     ──▶  WebSocket ──▶ React frontend
 | `pages/Optimization.jsx` | ✅ Done |
 | `pages/ANPR.jsx` | ✅ Done |
 | `pages/Settings.jsx` | ✅ Done |
-| `components/Navbar.jsx` | ✅ Done |
+| `components/Navbar.jsx` — NavLink navigation, username display, logout | ✅ Done |
 | `components/ViolationCard.jsx` | ✅ Done |
 | `components/SignalControl.jsx` | ✅ Done |
-| `App.jsx` — Router + protected routes | ✅ Done |
-| `index.js` — React entry point | ✅ Done |
+| `App.jsx` — BrowserRouter, ProtectedRoute wrapper, all 7 page routes | ✅ Done |
+| `index.js` — createRoot (React 18), StrictMode, Tailwind CSS import | ✅ Done |
 
 
 
