@@ -200,6 +200,18 @@ export default function LiveFeed() {
             />
 
             <StatTile
+              label="Current FPS"
+              value="—"
+              sub="reported by backend"
+            />
+
+            <StatTile
+              label="Active Tracks"
+              value="—"
+              sub="vehicles in frame"
+            />
+
+            <StatTile
               label="Signal (Green Road)"
               value={
                 congestion?.green_road
