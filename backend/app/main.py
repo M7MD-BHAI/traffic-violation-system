@@ -1,9 +1,12 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import cv2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -18,6 +21,8 @@ from app.routes import (
     vehicles,
     violations,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -70,3 +75,37 @@ app.include_router(optimization.router)
 @app.get("/health", tags=["system"])
 def health() -> dict:
     return {"status": "ok", "version": "1.0.0"}
+
+
+def _mjpeg_generator() -> bytes:
+    source = settings.VIDEO_SOURCE
+    # Try integer index first (webcam), else treat as file path
+    cap_source: int | str = int(source) if source.isdigit() else source
+    cap = cv2.VideoCapture(cap_source)
+    if not cap.isOpened():
+        logger.warning("MJPEG stream: cannot open video source %s", source)
+        return
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                # Loop back to start for recorded video files
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ok, frame = cap.read()
+                if not ok:
+                    break
+            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n"
+            )
+    finally:
+        cap.release()
+
+
+@app.get("/video/stream", tags=["system"])
+def video_stream() -> StreamingResponse:
+    return StreamingResponse(
+        _mjpeg_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
