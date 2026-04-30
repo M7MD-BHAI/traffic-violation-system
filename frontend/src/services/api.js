@@ -114,6 +114,12 @@ export const reportAccident = (body) =>
 export const resolveAccident = (id) =>
   api.patch(`/alerts/accident/${id}/resolve`).then((r) => r.data);
 
+// ── Settings ───────────────────────────────────────────────────────────────
+export const getSettings = () => api.get('/settings').then((r) => r.data);
+
+export const saveSettings = (body) =>
+  api.post('/settings', body).then((r) => r.data);
+
 // ── Health ─────────────────────────────────────────────────────────────────
 export const healthCheck = () => api.get('/health').then((r) => r.data);
 

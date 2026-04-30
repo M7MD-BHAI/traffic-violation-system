@@ -43,7 +43,7 @@ Real-time traffic violation detection (red light, helmet, speed) with ANPR, acci
 | M6 | Accident Detector | Detect crashes via IoU overlap + stagnation heuristic | ✅ Done |
 | M7 | ANPR Service | Triggered plate detection + EasyOCR (idle until violation) | ✅ Done |
 | M8 | Auth | JWT login, user roles, protected routes | ✅ Done |
-| M9 | Dashboard | React analytics UI with live WebSocket updates | 🟡 In Progress |
+| M9 | Dashboard | React analytics UI with live WebSocket updates | ✅ Done |
 
 ---
 
@@ -301,22 +301,27 @@ FastAPI     ──▶  WebSocket ──▶ React frontend
 | `routes/signals.py` — POST/GET /congestion endpoints | ✅ Done |
 | `routes/optimization.py` — WS /congestion/ws | ✅ Done |
 
-## Frontend (Completed)
+## Frontend (In Progress)
 
-| File | Status |
-|---|---|
-| `services/api.js` — Axios instance, JWT interceptor, all API functions | ✅ Done |
-| `pages/Login.jsx` — Tailwind login form, token storage, redirect | ✅ Done |
-| `pages/Dashboard.jsx` | ✅ Done |
-| `pages/Violations.jsx` | ✅ Done |
-| `pages/LiveFeed.jsx` | ✅ Done |
-| `pages/Accidents.jsx` | ✅ Done |
-| `pages/Optimization.jsx` | ✅ Done |
-| `pages/ANPR.jsx` | ✅ Done |
-| `pages/Settings.jsx` | ✅ Done |
-| `components/Navbar.jsx` — NavLink navigation, username display, logout | ✅ Done |
-| `components/ViolationCard.jsx` | ✅ Done |
-| `components/SignalControl.jsx` | ✅ Done |
+| File | Status | Notes |
+|---|---|---|
+| `services/api.js` — Axios instance, JWT interceptor, all API functions | ✅ Done | |
+| `App.jsx` — BrowserRouter, ProtectedRoute wrapper, all 7 page routes | ✅ Done | Fixed token key bug (`access_token`); Navbar now rendered inside ProtectedRoute |
+| `index.js` — createRoot (React 18), StrictMode, Tailwind CSS import | ✅ Done | |
+| `components/Navbar.jsx` — NavLink navigation, username display, logout | ✅ Done | Fixed logout to use `access_token` key |
+| `components/ViolationCard.jsx` — type badges, plate status, speed, confidence | ✅ Done | |
+| `components/SignalControl.jsx` — congestion bar, signal badge, vehicle count | ✅ Done | |
+| `pages/Login.jsx` — Tailwind login form, token storage, redirect | ✅ Done | |
+| `pages/Dashboard.jsx` — KPI cards, bar+pie Recharts, signal control, recent violations, WS live indicator | ✅ Done | Completed Session 4 |
+| `pages/Violations.jsx` — filter bar (type/date/plate), paginated grid, detail modal | ✅ Done | Completed Session 4 |
+| `hooks/useWebSocket.js` — url param, { data, status }, auto-reconnect, cleanup on unmount | ✅ Done | Completed Session 5 |
+| `pages/Accidents.jsx` — alert list, CRASH/STAGNATION badges, resolve button, 15s auto-refresh | ✅ Done | Completed Session 5 |
+| `pages/Optimization.jsx` — live WS signal grid, optimisation panel, snapshot history table | ✅ Done | Completed Session 5 |
+| `pages/ANPR.jsx` — plate search (text + track ID), status badges, violation history, plate_not_visible warning | ✅ Done | Completed Session 6 |
+| `pages/LiveFeed.jsx` — MJPEG stream display, start/stop, sidebar stats, congestion panel, recent violations grid | ✅ Done | Completed Session 6 |
+| `pages/Settings.jsx` | ✅ Done | Completed Session 6 |
+
+### Next session — pick up at PROMPT 7A (FastAPI main.py wiring)
 | `App.jsx` — BrowserRouter, ProtectedRoute wrapper, all 7 page routes | ✅ Done |
 | `index.js` — createRoot (React 18), StrictMode, Tailwind CSS import | ✅ Done |
 
