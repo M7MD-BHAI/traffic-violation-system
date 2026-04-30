@@ -247,7 +247,7 @@ FastAPI     ──▶  WebSocket ──▶ React frontend
 | M3 — Speed | ✅ Done |
 | M4 — Congestion | ✅ Done |
 | M5 — Counter | ✅ Done |
-| M6 — Accident | ⬜ Pending |
+| M6 — Accident | ✅ Done |
 | M7 — ANPR | ✅ Done |
 | M8 — Auth | ✅ Done |
 | M9 — Frontend | 🟡 In Progress |
