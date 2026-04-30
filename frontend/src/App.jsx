@@ -7,11 +7,17 @@ import Accidents from "./pages/Accidents";
 import Optimization from "./pages/Optimization";
 import ANPR from "./pages/ANPR";
 import Settings from "./pages/Settings";
+import Navbar from "./components/Navbar";
 
 function ProtectedRoute({ children }) {
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem("access_token");
   if (!token) return <Navigate to="/login" replace />;
-  return children;
+  return (
+    <>
+      <Navbar />
+      {children}
+    </>
+  );
 }
 
 export default function App() {

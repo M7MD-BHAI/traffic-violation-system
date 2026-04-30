@@ -15,7 +15,7 @@ export default function Navbar() {
   const username = localStorage.getItem("username") || "User";
 
   function handleLogout() {
-    localStorage.removeItem("token");
+    localStorage.removeItem("access_token");
     localStorage.removeItem("username");
     navigate("/login");
   }
