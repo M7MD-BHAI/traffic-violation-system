@@ -91,10 +91,16 @@ class HybridSpeedService:
 
     # ── Public API ─────────────────────────────────────────────────────────
 
-    def process_frame(self, frame: np.ndarray, frame_idx: int) -> list[dict]:
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        frame_idx: int,
+        tracked: list[TrackedBox] | None = None,
+    ) -> list[dict]:
         self._evict_stale_cache()
 
-        tracked: list[TrackedBox] = self._tracker.update(frame)
+        if tracked is None:
+            tracked = self._tracker.update(frame)
         if not tracked:
             return []
 

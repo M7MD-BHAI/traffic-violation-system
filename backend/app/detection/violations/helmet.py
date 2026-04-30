@@ -74,8 +74,14 @@ class HelmetViolationDetector:
         """
         self._rl_violations.update(violations)
 
-    def process_frame(self, frame: np.ndarray, frame_idx: int) -> list[dict]:
-        tracked: list[TrackedBox] = self._tracker.update(frame)
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        frame_idx: int,
+        tracked: list[TrackedBox] | None = None,
+    ) -> list[dict]:
+        if tracked is None:
+            tracked = self._tracker.update(frame)
         motos = [b for b in tracked if b["class_id"] == _MOTORCYCLE_CLASS_ID]
 
         if not motos:

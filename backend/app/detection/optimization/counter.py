@@ -77,8 +77,14 @@ class TrafficCounter:
 
     # ── Public interface ───────────────────────────────────────────────────
 
-    def process_frame(self, frame: np.ndarray, frame_idx: int) -> None:
-        tracked: list[TrackedBox] = self._tracker.update(frame)
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        frame_idx: int,
+        tracked: list[TrackedBox] | None = None,
+    ) -> None:
+        if tracked is None:
+            tracked = self._tracker.update(frame)
 
         # Remove y_prev entries for vehicles no longer in frame
         active_ids = {box["track_id"] for box in tracked}

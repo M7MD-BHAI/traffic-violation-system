@@ -161,11 +161,17 @@ class ViolationManager:
         except Exception as exc:
             logger.warning("ANPR service not available: %s", exc)
 
-    def process_frame(self, frame: np.ndarray, frame_idx: int) -> list[dict]:
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        frame_idx: int,
+        tracked: list[TrackedBox] | None = None,
+    ) -> list[dict]:
         frame = cv2.resize(frame, self._resolution)
         signal_state = self._signal_detector.detect(frame)
 
-        tracked: list[TrackedBox] = self._tracker.update(frame)
+        if tracked is None:
+            tracked = self._tracker.update(frame)
         if not tracked:
             return []
 
