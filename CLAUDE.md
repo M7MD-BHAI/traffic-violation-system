@@ -65,6 +65,7 @@ traffic-violation-system/
 │       │   ├── optimization/
 │       │   │   ├── congestion.py        # M4 — density service
 │       │   │   ├── signal_control.py    # M4 — aggregator + optimizer
+│       │   │   ├── counter.py           # M5 — vehicle counter
 │       │   │   └── accident.py          # M6
 │       │   ├── tracking/
 │       │   │   ├── vehicle_tracker.py   # BoT-SORT wrapper
@@ -117,10 +118,13 @@ traffic-violation-system/
 │       │   ├── ANPR.jsx
 │       │   ├── Settings.jsx
 │       │   └── Login.jsx
+│       ├── hooks/
+│       │   └── useWebSocket.js
 │       ├── services/
 │       │   └── api.js
 │       ├── App.jsx
-│       └── index.js
+│       ├── index.jsx
+│       └── index.css
 ├── data/
 │   └── test_videos/
 ├── notebooks/
@@ -301,29 +305,39 @@ FastAPI     ──▶  WebSocket ──▶ React frontend
 | `routes/signals.py` — POST/GET /congestion endpoints | ✅ Done |
 | `routes/optimization.py` — WS /congestion/ws | ✅ Done |
 
-## Frontend (In Progress)
+## Frontend (Completed)
 
 | File | Status | Notes |
 |---|---|---|
 | `services/api.js` — Axios instance, JWT interceptor, all API functions | ✅ Done | |
-| `App.jsx` — BrowserRouter, ProtectedRoute wrapper, all 7 page routes | ✅ Done | Fixed token key bug (`access_token`); Navbar now rendered inside ProtectedRoute |
-| `index.js` — createRoot (React 18), StrictMode, Tailwind CSS import | ✅ Done | |
+| `App.jsx` — BrowserRouter, ProtectedRoute wrapper, all 7 page routes | ✅ Done | Fixed token key bug (`access_token`); Navbar rendered inside ProtectedRoute |
+| `index.jsx` — createRoot (React 18), StrictMode, Tailwind CSS import | ✅ Done | |
 | `components/Navbar.jsx` — NavLink navigation, username display, logout | ✅ Done | Fixed logout to use `access_token` key |
 | `components/ViolationCard.jsx` — type badges, plate status, speed, confidence | ✅ Done | |
 | `components/SignalControl.jsx` — congestion bar, signal badge, vehicle count | ✅ Done | |
 | `pages/Login.jsx` — Tailwind login form, token storage, redirect | ✅ Done | |
-| `pages/Dashboard.jsx` — KPI cards, bar+pie Recharts, signal control, recent violations, WS live indicator | ✅ Done | Completed Session 4 |
-| `pages/Violations.jsx` — filter bar (type/date/plate), paginated grid, detail modal | ✅ Done | Completed Session 4 |
-| `hooks/useWebSocket.js` — url param, { data, status }, auto-reconnect, cleanup on unmount | ✅ Done | Completed Session 5 |
-| `pages/Accidents.jsx` — alert list, CRASH/STAGNATION badges, resolve button, 15s auto-refresh | ✅ Done | Completed Session 5 |
-| `pages/Optimization.jsx` — live WS signal grid, optimisation panel, snapshot history table | ✅ Done | Completed Session 5 |
-| `pages/ANPR.jsx` — plate search (text + track ID), status badges, violation history, plate_not_visible warning | ✅ Done | Completed Session 6 |
-| `pages/LiveFeed.jsx` — MJPEG stream display, start/stop, sidebar stats, congestion panel, recent violations grid | ✅ Done | Completed Session 6 |
-| `pages/Settings.jsx` | ✅ Done | Completed Session 6 |
+| `pages/Dashboard.jsx` — KPI cards, bar+pie Recharts, signal control, recent violations, WS live indicator | ✅ Done | |
+| `pages/Violations.jsx` — filter bar (type/date/plate), paginated grid, detail modal | ✅ Done | |
+| `hooks/useWebSocket.js` — url param, { data, status }, auto-reconnect, cleanup on unmount | ✅ Done | |
+| `pages/Accidents.jsx` — alert list, CRASH/STAGNATION badges, resolve button, 15s auto-refresh | ✅ Done | |
+| `pages/Optimization.jsx` — live WS signal grid, optimisation panel, snapshot history table | ✅ Done | |
+| `pages/ANPR.jsx` — plate search (text + track ID), status badges, violation history, plate_not_visible warning | ✅ Done | |
+| `pages/LiveFeed.jsx` — MJPEG stream display, start/stop, sidebar stats, congestion panel, recent violations grid | ✅ Done | |
+| `pages/Settings.jsx` — camera URL, speed limit, confidence threshold, ANPR languages config form | ✅ Done | |
 
-### Next session — pick up at PROMPT 7A (FastAPI main.py wiring)
-| `App.jsx` — BrowserRouter, ProtectedRoute wrapper, all 7 page routes | ✅ Done |
-| `index.js` — createRoot (React 18), StrictMode, Tailwind CSS import | ✅ Done |
+## Detection Modules (Completed)
+
+| File | Status |
+|---|---|
+| `detection/video_processor.py` — main 30 FPS loop, single YOLO pass, distributes to all modules | ✅ Done |
+| `detection/violations/red_light.py` — M1: CalibrationTool, SignalStateDetector, ViolationManager | ✅ Done |
+| `detection/violations/helmet.py` — M2: HelmetViolationDetector, head-zone ROI, 15-frame voting | ✅ Done |
+| `detection/violations/speeding.py` — M3: HybridSpeedService, mini-box centroid, trap-line timing | ✅ Done |
+| `detection/optimization/congestion.py` — M4: RoadDensityService, CI formula, 10s async POST | ✅ Done |
+| `detection/optimization/signal_control.py` — M4: CongestionAggregator, phase optimizer, WS broadcast | ✅ Done |
+| `detection/optimization/counter.py` — M5: TrafficCounter, crossing detection, 60s interval report | ✅ Done |
+| `detection/optimization/accident.py` — M6: AccidentDetector, IoU crash + stagnation heuristics | ✅ Done |
+| `detection/anpr/plate_reader.py` — M7: ANPR_Service, ThreadPoolExecutor, EasyOCR, cache | ✅ Done |
 
 
 

@@ -3,7 +3,28 @@
     "allow": [
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(python -c \"from backend.app.main import app; print\\('Import OK'\\)\")",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\muham\\\\traffic-violation-system\\\\data\" | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\muham\\\\traffic-violation-system\\\\data\\\\test_videos\" | ForEach-Object { $_.Name })",
+      "PowerShell(cd \"C:\\\\Users\\\\muham\\\\traffic-violation-system\"; $env:PYTHONPATH=\"backend\"; .\\\\venv\\\\Scripts\\\\python.exe -c \"from app.main import app; print\\('Import OK'\\)\" 2>&1)",
+      "PowerShell(cd \"C:\\\\Users\\\\muham\\\\traffic-violation-system\"; $env:PYTHONPATH=\"backend\"; Start-Process -FilePath \".\\\\venv\\\\Scripts\\\\uvicorn.exe\" -ArgumentList \"app.main:app\",\"--reload\",\"--host\",\"0.0.0.0\",\"--port\",\"8000\" -NoNewWindow -PassThru)",
+      "PowerShell(Start-Sleep -Seconds 6; Invoke-WebRequest -Uri \"http://localhost:8000/health\" -UseBasicParsing 2>&1)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:8000/health\" -UseBasicParsing)",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:5173\" -UseBasicParsing)",
+      "Bash(git *)",
+      "Bash(python seed_admin.py)",
+      "PowerShell(Get-ChildItem C:\\\\Users\\\\muham\\\\traffic-violation-system -Recurse -Depth 2 | Select-Object Name, FullName | Where-Object {$_.Name -match \"require|setup|pyproject|venv|env\"})",
+      "PowerShell(head *)",
+      "PowerShell(\\(Get-Item C:\\\\Users\\\\muham\\\\traffic-violation-system\\\\venv\\).Length; Get-ChildItem C:\\\\Users\\\\muham\\\\traffic-violation-system\\\\venv -Force | Select-Object Name)",
+      "PowerShell(py *)",
+      "PowerShell($env:PATH -split \";\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\muham\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python310\\\\Scripts\\\\\" | Where-Object {$_.Name -match \"uvicorn|pip\"} | Select-Object Name)",
+      "Bash(npm run *)",
+      "Bash(python -c \"import sqlite3; c=sqlite3.connect\\('traffic_fyp.db'\\); print\\(c.execute\\('SELECT id, username, role FROM users'\\).fetchall\\(\\)\\)\")",
+      "Bash(python _check_users.py)"
     ]
   }
 }
