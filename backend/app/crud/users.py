@@ -1,5 +1,6 @@
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
+import hashlib
 
 from app.database.models import User
 
@@ -7,10 +8,14 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(plain: str) -> str:
+    # Fix: handle bcrypt 72-byte limit
+    plain = hashlib.sha256(plain.encode()).hexdigest()
     return _pwd_context.hash(plain)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    # Must apply same preprocessing here
+    plain = hashlib.sha256(plain.encode()).hexdigest()
     return _pwd_context.verify(plain, hashed)
 
 

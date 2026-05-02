@@ -10,7 +10,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.database.connection import create_tables
+from app.crud.users import create_user, get_by_username
+from app.database.connection import SessionLocal, create_tables
 from app.detection.optimization.signal_control import aggregator
 from app.routes import (
     accidents,
