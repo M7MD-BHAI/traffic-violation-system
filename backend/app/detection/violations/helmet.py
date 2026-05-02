@@ -6,9 +6,9 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from ultralytics import YOLO
 
 from app.config import settings
+from app.detection.yolo_loader import get_helmet_model
 from app.crud.violations import insert_violation
 from app.database.connection import SessionLocal
 from app.detection.tracking.vehicle_tracker import TrackedBox, VehicleTracker
@@ -46,7 +46,7 @@ class HelmetViolationDetector:
             )
 
         self._tracker = VehicleTracker(primary_model)
-        self._helmet_model = YOLO(helmet_model_path)
+        self._helmet_model = get_helmet_model()
 
         # track_id → sliding window of bool votes (bare_head detected in that frame?)
         self._vote_buffer: dict[int, deque[bool]] = {}

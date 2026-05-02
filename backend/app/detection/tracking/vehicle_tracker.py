@@ -1,7 +1,6 @@
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import numpy as np
-from ultralytics import YOLO
 
 # COCO class IDs for the four vehicle types this system tracks
 _VEHICLE_CLASSES: dict[int, str] = {
@@ -29,7 +28,7 @@ class VehicleTracker:
     state across frames, and returns only vehicle detections with valid track IDs.
     """
 
-    def __init__(self, model: YOLO) -> None:
+    def __init__(self, model: Any) -> None:
         self._model = model
 
     def update(self, frame: np.ndarray) -> list[TrackedBox]:

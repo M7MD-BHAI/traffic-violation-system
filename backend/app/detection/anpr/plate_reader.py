@@ -52,15 +52,11 @@ class ANPR_Service:
         # Plate YOLO model — soft dependency (fallback if missing)
         self._plate_model = None
         try:
-            from ultralytics import YOLO  # noqa: PLC0415
-            if Path(plate_model_path).exists():
-                self._plate_model = YOLO(plate_model_path)
-                logger.info("Plate YOLO model loaded from %s", plate_model_path)
-            else:
-                logger.warning(
-                    "Plate model not found at '%s' — using bottom-third fallback crop.",
-                    plate_model_path,
-                )
+            from app.detection.yolo_loader import get_plate_model  # noqa: PLC0415
+            self._plate_model = get_plate_model()
+            logger.info("Plate YOLO model loaded via singleton.")
+        except FileNotFoundError as exc:
+            logger.warning("Plate model not found — using bottom-third fallback crop: %s", exc)
         except Exception as exc:
             logger.warning("Could not load plate model: %s — using fallback.", exc)
 
