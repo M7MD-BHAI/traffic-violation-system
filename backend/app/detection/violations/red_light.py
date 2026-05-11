@@ -186,8 +186,6 @@ class ViolationManager:
         cfg: dict = json.loads(cfg_file.read_text())
         line_pts = cfg["violation_line"]          # [[x1,y1],[x2,y2]]
         self._line_y: float = (line_pts[0][1] + line_pts[1][1]) / 2
-        res = cfg["resolution"]                   # [w, h]
-        self._resolution: tuple[int, int] = (int(res[0]), int(res[1]))
 
         self._tracker = VehicleTracker(model)
         self._signal_detector = SignalStateDetector(cfg["signal_roi"])
@@ -210,7 +208,6 @@ class ViolationManager:
         frame_idx: int,
         tracked: list[TrackedBox] | None = None,
     ) -> list[dict]:
-        frame = cv2.resize(frame, self._resolution)
         signal_state = self._signal_detector.detect(frame)
 
         if tracked is None:
