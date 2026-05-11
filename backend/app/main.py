@@ -22,6 +22,7 @@ from app.routes import (
     optimization,
     signals,
     vehicles,
+    video,
     violations,
 )
 
@@ -85,6 +86,7 @@ app.include_router(vehicles.router)
 app.include_router(accidents.router)
 app.include_router(signals.router)
 app.include_router(optimization.router)
+app.include_router(video.router)
 
 
 @app.get("/health", tags=["system"])

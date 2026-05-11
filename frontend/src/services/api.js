@@ -124,6 +124,20 @@ export const saveSettings = (body) =>
 // ── Video ──────────────────────────────────────────────────────────────────
 export const getVideoStats = () => api.get('/video/stats').then((r) => r.data);
 
+export const uploadVideo = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/video/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then((r) => r.data);
+};
+
+export const getFirstFrameUrl = () =>
+  `${BACKEND_URL}/video/first-frame?_=${Date.now()}`;
+
+export const saveCalibration = (stop_line, signal_roi) =>
+  api.post('/video/calibration', { stop_line, signal_roi }).then((r) => r.data);
+
 // ── Health ─────────────────────────────────────────────────────────────────
 export const healthCheck = () => api.get('/health').then((r) => r.data);
 

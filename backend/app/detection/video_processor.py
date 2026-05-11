@@ -41,7 +41,10 @@ class VideoProcessor:
 
     def __init__(self, config_path: str = "calibration_config.json") -> None:
         self._config_path = config_path
+        self._video_source: str = settings.VIDEO_SOURCE
         self._running = False
+        self._stopped_event = threading.Event()
+        self._stopped_event.set()   # not running yet
         self._lock = threading.Lock()
         self._latest_frame: np.ndarray | None = None
         self._fps: float = 0.0
@@ -110,52 +113,39 @@ class VideoProcessor:
     def start(self) -> None:
         if self._running:
             return
-
-        if not self._is_calibrated():
-            self._run_calibration()
-            # Re-init red_light module with the freshly saved config
-            try:
-                from app.detection.violations.red_light import ViolationManager  # noqa: PLC0415
-                self._red_light = ViolationManager(self._config_path, get_primary_model())
-                logger.info("Red-light module re-initialised after calibration.")
-            except Exception as exc:
-                logger.error("Red-light module failed after calibration: %s", exc)
-
+        self._stopped_event.clear()
         self._running = True
         t = threading.Thread(target=self._run_loop, daemon=True)
         t.start()
         logger.info("VideoProcessor started.")
 
-    def _is_calibrated(self) -> bool:
-        from pathlib import Path  # noqa: PLC0415
-        import json  # noqa: PLC0415
-        p = Path(self._config_path)
-        if not p.exists():
-            return False
-        try:
-            cfg = json.loads(p.read_text())
-            return bool(cfg.get("calibrated", False))
-        except Exception:
-            return False
-
-    def _run_calibration(self) -> None:
-        from app.detection.violations.red_light import CalibrationTool  # noqa: PLC0415
-        logger.info(
-            "Calibration required — a window will open with the first video frame.\n"
-            "  1. Click 2 points to draw the STOP LINE (red — cars must not cross when RED)\n"
-            "  2. Click 2 points to mark the SIGNAL ROI (orange — where to read the light)\n"
-            "  3. Press ENTER to confirm or ESC to redo."
-        )
-        source = settings.VIDEO_SOURCE
-        cap_source: str | int = int(source) if source.isdigit() else source
-        tool = CalibrationTool()
-        tool.run(str(cap_source))
-        tool.save_config(self._config_path)
-        logger.info("Calibration complete — config saved to %s", self._config_path)
-
     def stop(self) -> None:
         self._running = False
         logger.info("VideoProcessor stopped.")
+
+    def reload(self, new_source: str) -> None:
+        """Stop the current video loop and restart with a new video source."""
+        self.stop()
+        self._stopped_event.wait(timeout=3.0)
+        self._video_source = new_source
+        with self._lock:
+            self._latest_frame = None   # clear stale frame
+        self._stopped_event.clear()
+        self._running = True
+        t = threading.Thread(target=self._run_loop, daemon=True)
+        t.start()
+        logger.info("VideoProcessor reloaded — source: %s", new_source)
+
+    def reinit_red_light(self) -> None:
+        """Re-read calibration_config.json and re-initialise the red-light module."""
+        try:
+            self._red_light = ViolationManager(self._config_path, get_primary_model())
+            logger.info("Red-light module re-initialised with fresh calibration.")
+        except Exception as exc:
+            logger.error("Red-light re-init failed: %s", exc)
+
+    def get_source(self) -> str:
+        return self._video_source
 
     def get_latest_frame(self) -> np.ndarray | None:
         with self._lock:
@@ -198,14 +188,18 @@ class VideoProcessor:
     # ── Internal ───────────────────────────────────────────────────────────
 
     def _run_loop(self) -> None:
-        source = settings.VIDEO_SOURCE
-        cap_source: int | str = int(source) if source.isdigit() else source
+        cap_source: int | str = (
+            int(self._video_source)
+            if self._video_source.isdigit()
+            else self._video_source
+        )
         try:
             self.process_video(cap_source)
         except Exception as exc:
             logger.error("VideoProcessor fatal error: %s", exc)
         finally:
             self._running = False
+            self._stopped_event.set()
 
     def _process_frame(self, frame: np.ndarray, frame_idx: int) -> np.ndarray:
         # ── Step 1: ONE YOLO inference ─────────────────────────────────────
