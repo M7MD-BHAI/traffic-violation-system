@@ -24,11 +24,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401: clear stale token and bounce to login
+// On 401: clear stale token and bounce to login (skip on the login request itself)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    if (error.response?.status === 401 && !isLoginRequest) {
       removeToken();
       window.location.href = '/login';
     }
@@ -119,6 +120,9 @@ export const getSettings = () => api.get('/settings').then((r) => r.data);
 
 export const saveSettings = (body) =>
   api.post('/settings', body).then((r) => r.data);
+
+// ── Video ──────────────────────────────────────────────────────────────────
+export const getVideoStats = () => api.get('/video/stats').then((r) => r.data);
 
 // ── Health ─────────────────────────────────────────────────────────────────
 export const healthCheck = () => api.get('/health').then((r) => r.data);
