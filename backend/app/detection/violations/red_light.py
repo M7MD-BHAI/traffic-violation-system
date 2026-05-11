@@ -316,15 +316,47 @@ class ViolationManager:
     def _save_crop(
         self, frame: np.ndarray, bbox: list[float], track_id: int, frame_idx: int
     ) -> str:
+        """
+        Save a contextual snapshot for the violation: a padded crop around the
+        vehicle with the bounding box drawn on it so the car AND the detection
+        box are both visible in the dashboard's violation gallery.
+        """
+        h_f, w_f = frame.shape[:2]
         x1, y1, x2, y2 = (int(v) for v in bbox)
-        crop = frame[y1:y2, x1:x2]
+
+        # Pad by ~30 % of the bbox size, clamped to frame bounds
+        pad_x = max(40, int((x2 - x1) * 0.3))
+        pad_y = max(40, int((y2 - y1) * 0.3))
+        cx1 = max(0, x1 - pad_x)
+        cy1 = max(0, y1 - pad_y)
+        cx2 = min(w_f, x2 + pad_x)
+        cy2 = min(h_f, y2 + pad_y)
+
+        crop = frame[cy1:cy2, cx1:cx2].copy()
+        if crop.size == 0:
+            crop = frame.copy()
+            cx1, cy1 = 0, 0
+
+        # bbox coords expressed in the crop's coordinate space
+        bx1, by1 = x1 - cx1, y1 - cy1
+        bx2, by2 = x2 - cx1, y2 - cy1
+
+        cv2.rectangle(crop, (bx1, by1), (bx2, by2), (0, 0, 255), 3)
+        label = f"RED-LIGHT  #{track_id}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+        ly1 = max(0, by1 - th - 8)
+        cv2.rectangle(crop, (bx1, ly1), (bx1 + tw + 8, by1), (0, 0, 255), -1)
+        cv2.putText(
+            crop, label, (bx1 + 4, by1 - 5),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2,
+        )
 
         out_dir = Path(settings.STATIC_FILES_DIR) / "violations"
         out_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"rl_{track_id}_{frame_idx}.jpg"
         path = out_dir / filename
-        cv2.imwrite(str(path), crop)
+        cv2.imwrite(str(path), crop, [cv2.IMWRITE_JPEG_QUALITY, 92])
         return str(path)
 
     def _persist(self, record: dict) -> None:
