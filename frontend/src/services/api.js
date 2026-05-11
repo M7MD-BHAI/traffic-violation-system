@@ -121,6 +121,9 @@ export const getSettings = () => api.get('/settings').then((r) => r.data);
 export const saveSettings = (body) =>
   api.post('/settings', body).then((r) => r.data);
 
+// ── Video ──────────────────────────────────────────────────────────────────
+export const getVideoStats = () => api.get('/video/stats').then((r) => r.data);
+
 // ── Health ─────────────────────────────────────────────────────────────────
 export const healthCheck = () => api.get('/health').then((r) => r.data);
 

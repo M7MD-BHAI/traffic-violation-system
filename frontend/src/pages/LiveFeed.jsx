@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback, useRef, useId } from 'react';
-import { getViolations, getCongestionStatus } from '../services/api';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { getViolations, getCongestionStatus, getVideoStats } from '../services/api';
 import ViolationCard from '../components/ViolationCard';
 
 const BACKEND_URL  = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
@@ -44,6 +44,7 @@ export default function LiveFeed() {
   const [streamError, setStreamError]       = useState(false);
   const [violations, setViolations]         = useState([]);
   const [congestion, setCongestion]         = useState(null);
+  const [videoStats, setVideoStats]         = useState(null);
   const [violationCount, setViolationCount] = useState(0);
   const [lastRefresh, setLastRefresh]       = useState(null);
 
@@ -54,9 +55,10 @@ export default function LiveFeed() {
   // ── Poll violations + congestion status ──────────────────────────────────────
   const pollData = useCallback(async () => {
     try {
-      const [vData, cData] = await Promise.allSettled([
+      const [vData, cData, sData] = await Promise.allSettled([
         getViolations({ limit: 5 }),
         getCongestionStatus(),
+        getVideoStats(),
       ]);
 
       if (vData.status === 'fulfilled' && Array.isArray(vData.value)) {
@@ -68,6 +70,9 @@ export default function LiveFeed() {
       }
       if (cData.status === 'fulfilled' && cData.value) {
         setCongestion(cData.value);
+      }
+      if (sData.status === 'fulfilled' && sData.value) {
+        setVideoStats(sData.value);
       }
       setLastRefresh(new Date());
     } catch {
@@ -201,13 +206,13 @@ export default function LiveFeed() {
 
             <StatTile
               label="Current FPS"
-              value="—"
+              value={videoStats?.fps != null ? videoStats.fps : '—'}
               sub="reported by backend"
             />
 
             <StatTile
               label="Active Tracks"
-              value="—"
+              value={videoStats?.track_count != null ? videoStats.track_count : '—'}
               sub="vehicles in frame"
             />
 
