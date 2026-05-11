@@ -209,6 +209,8 @@ class ViolationManager:
         tracked: list[TrackedBox] | None = None,
     ) -> list[dict]:
         signal_state = self._signal_detector.detect(frame)
+        if frame_idx % 30 == 0:
+            logger.debug("frame=%d  signal=%s  line_y=%.1f", frame_idx, signal_state, self._line_y)
 
         if tracked is None:
             tracked = self._tracker.update(frame)
@@ -229,10 +231,16 @@ class ViolationManager:
 
             if tid in vehicle_history.y_prev:
                 y_prev_val = vehicle_history.y_prev[tid]
+                crossed = line_crossing_check(y_prev_val, y_bc, self._line_y)
+                if crossed:
+                    logger.info(
+                        "LINE CROSS tid=%d  y_prev=%.1f  y_curr=%.1f  line_y=%.1f  signal=%s",
+                        tid, y_prev_val, y_bc, self._line_y, signal_state,
+                    )
 
                 if (
                     signal_state == "RED"
-                    and line_crossing_check(y_prev_val, y_bc, self._line_y)
+                    and crossed
                     and tid not in self._confirmed_ids
                 ):
                     self._confirmed_ids.add(tid)

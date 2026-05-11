@@ -210,13 +210,14 @@ class VideoProcessor:
         tracked: list[TrackedBox] = self._tracker.update(frame)
         self._track_count = len(tracked)
 
-        # ── Step 2: Update shared vehicle_history ──────────────────────────
+        # ── Step 2: Prune stale vehicle_history entries ────────────────────────
+        # y_prev is written by red_light.process_frame after each crossing check;
+        # writing it here (before the violation modules run) would make y_prev == y_curr
+        # on every frame, permanently breaking the line-crossing detection.
         active_ids = {box["track_id"] for box in tracked}
         for stale in list(vehicle_history.y_prev.keys()):
             if stale not in active_ids:
                 vehicle_history.y_prev.pop(stale, None)
-        for box in tracked:
-            vehicle_history.y_prev[box["track_id"]] = box["bbox"][3]  # y2 = bottom-centre
 
         # ── Step 3: Violation modules (receive pre-computed tracked) ───────
         rl_violations: list[dict] = []
