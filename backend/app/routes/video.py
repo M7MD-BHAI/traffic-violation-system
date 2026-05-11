@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import cv2
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -20,14 +20,27 @@ class CalibrationBody(BaseModel):
 
 
 @router.post("/upload")
-async def upload_video(file: UploadFile = File(...)) -> dict:
-    """Save uploaded video file and reload the processor with the new source."""
+async def upload_video(
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+) -> dict:
+    """Stream video to disk in 1 MB chunks, then reload the processor in the background."""
     _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    safe_name = Path(file.filename).name  # strip any path components
+    safe_name = Path(file.filename).name
     dest = _UPLOAD_DIR / safe_name
-    content = await file.read()
-    dest.write_bytes(content)
-    processor.reload(str(dest))
+
+    # Write in chunks — never loads the full file into RAM
+    with open(dest, "wb") as f:
+        while chunk := await file.read(1024 * 1024):   # 1 MB at a time
+            f.write(chunk)
+
+    # Update source path immediately so /first-frame works right away
+    processor.set_source(str(dest))
+
+    # Restart the video loop in the background (stop + wait ~3 s)
+    # so the response returns as soon as the file is saved
+    background_tasks.add_task(processor.reload, str(dest))
+
     return {"filename": safe_name, "path": str(dest)}
 
 

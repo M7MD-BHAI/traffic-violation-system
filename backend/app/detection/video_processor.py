@@ -147,6 +147,10 @@ class VideoProcessor:
     def get_source(self) -> str:
         return self._video_source
 
+    def set_source(self, new_source: str) -> None:
+        """Update the video source path without restarting the loop (instant)."""
+        self._video_source = new_source
+
     def get_latest_frame(self) -> np.ndarray | None:
         with self._lock:
             return self._latest_frame.copy() if self._latest_frame is not None else None
