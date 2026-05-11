@@ -145,9 +145,13 @@ class SignalStateDetector:
         self._y1 = int(min(pt1[1], pt2[1]))
         self._x2 = int(max(pt1[0], pt2[0]))
         self._y2 = int(max(pt1[1], pt2[1]))
+        self._last_means: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     def detect(self, frame: np.ndarray) -> str:
-        crop = frame[self._y1:self._y2, self._x1:self._x2]
+        h_f, w_f = frame.shape[:2]
+        x1, x2 = max(0, self._x1), min(w_f, self._x2)
+        y1, y2 = max(0, self._y1), min(h_f, self._y2)
+        crop = frame[y1:y2, x1:x2]
         if crop.size == 0:
             return "UNKNOWN"
 
@@ -158,12 +162,26 @@ class SignalStateDetector:
         top_mean = float(np.mean(v_channel[:third]))
         mid_mean = float(np.mean(v_channel[third : 2 * third]))
         bot_mean = float(np.mean(v_channel[2 * third :]))
+        self._last_means = (top_mean, mid_mean, bot_mean)
 
         if top_mean >= mid_mean and top_mean >= bot_mean:
             return "RED"
         if bot_mean >= top_mean and bot_mean >= mid_mean:
             return "GREEN"
         return "YELLOW"
+
+    @property
+    def last_means(self) -> tuple[float, float, float]:
+        return self._last_means
+
+
+def _line_y_at_x(line_pts: list[list[float]], x: float) -> float:
+    """Return the y of the calibration line at the given x (linear interpolation)."""
+    (x1, y1), (x2, y2) = line_pts[0], line_pts[1]
+    if abs(x2 - x1) < 1e-6:
+        return (y1 + y2) / 2.0
+    t = (x - x1) / (x2 - x1)
+    return y1 + t * (y2 - y1)
 
 
 class ViolationManager:
@@ -184,12 +202,18 @@ class ViolationManager:
             )
 
         cfg: dict = json.loads(cfg_file.read_text())
-        line_pts = cfg["violation_line"]          # [[x1,y1],[x2,y2]]
-        self._line_y: float = (line_pts[0][1] + line_pts[1][1]) / 2
+        self._line_pts: list[list[float]] = cfg["violation_line"]   # [[x1,y1],[x2,y2]]
+        self._line_y: float = (self._line_pts[0][1] + self._line_pts[1][1]) / 2
 
         self._tracker = VehicleTracker(model)
         self._signal_detector = SignalStateDetector(cfg["signal_roi"])
         self._confirmed_ids: set[int] = set()
+        self.last_signal_state: str = "UNKNOWN"
+
+        logger.info(
+            "Red-light module ready — line_pts=%s  signal_roi=%s",
+            self._line_pts, cfg["signal_roi"],
+        )
 
         self._anpr = None
         try:
@@ -209,8 +233,13 @@ class ViolationManager:
         tracked: list[TrackedBox] | None = None,
     ) -> list[dict]:
         signal_state = self._signal_detector.detect(frame)
+        self.last_signal_state = signal_state
         if frame_idx % 30 == 0:
-            logger.debug("frame=%d  signal=%s  line_y=%.1f", frame_idx, signal_state, self._line_y)
+            tm, mm, bm = self._signal_detector.last_means
+            logger.info(
+                "frame=%d  signal=%s  V[top=%.1f mid=%.1f bot=%.1f]  tracks=%d",
+                frame_idx, signal_state, tm, mm, bm, len(tracked) if tracked else 0,
+            )
 
         if tracked is None:
             tracked = self._tracker.update(frame)
@@ -227,15 +256,17 @@ class ViolationManager:
         for box in tracked:
             tid = box["track_id"]
             x1, y1, x2, y2 = box["bbox"]
-            y_bc = y2  # bottom-centre y as specified
+            x_bc = (x1 + x2) / 2.0
+            y_bc = y2
+            line_y_here = _line_y_at_x(self._line_pts, x_bc)
 
             if tid in vehicle_history.y_prev:
                 y_prev_val = vehicle_history.y_prev[tid]
-                crossed = line_crossing_check(y_prev_val, y_bc, self._line_y)
+                crossed = line_crossing_check(y_prev_val, y_bc, line_y_here)
                 if crossed:
                     logger.info(
-                        "LINE CROSS tid=%d  y_prev=%.1f  y_curr=%.1f  line_y=%.1f  signal=%s",
-                        tid, y_prev_val, y_bc, self._line_y, signal_state,
+                        "LINE CROSS tid=%d  x=%.0f  y_prev=%.1f → y_curr=%.1f  line_y@x=%.1f  signal=%s",
+                        tid, x_bc, y_prev_val, y_bc, line_y_here, signal_state,
                     )
 
                 if (
@@ -244,6 +275,10 @@ class ViolationManager:
                     and tid not in self._confirmed_ids
                 ):
                     self._confirmed_ids.add(tid)
+                    logger.warning(
+                        "🚨 RED-LIGHT VIOLATION  tid=%d  frame=%d  bbox=%s",
+                        tid, frame_idx, [int(v) for v in box["bbox"]],
+                    )
                     image_path = self._save_crop(frame, box["bbox"], tid, frame_idx)
 
                     record: dict = {

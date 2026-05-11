@@ -1,11 +1,24 @@
 import asyncio
 import logging
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import cv2
 from fastapi import FastAPI
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s  %(name)s  %(message)s",
+    datefmt="%H:%M:%S",
+    stream=sys.stdout,
+    force=True,   # override uvicorn's default handlers
+)
+# Quiet down library noise; keep our app logs visible
+logging.getLogger("ultralytics").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles

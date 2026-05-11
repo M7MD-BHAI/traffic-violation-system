@@ -224,7 +224,8 @@ class VideoProcessor:
         if self._red_light is not None:
             try:
                 rl_violations = self._red_light.process_frame(frame, frame_idx, tracked)
-                self._signal_state = self._red_light._signal_detector.detect(frame)
+                # process_frame just called detect() — reuse its result instead of running it twice
+                self._signal_state = self._red_light.last_signal_state
             except Exception as exc:
                 logger.error("Red-light frame error: %s", exc)
 
