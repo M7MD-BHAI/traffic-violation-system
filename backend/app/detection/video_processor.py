@@ -110,10 +110,48 @@ class VideoProcessor:
     def start(self) -> None:
         if self._running:
             return
+
+        if not self._is_calibrated():
+            self._run_calibration()
+            # Re-init red_light module with the freshly saved config
+            try:
+                from app.detection.violations.red_light import ViolationManager  # noqa: PLC0415
+                self._red_light = ViolationManager(self._config_path, get_primary_model())
+                logger.info("Red-light module re-initialised after calibration.")
+            except Exception as exc:
+                logger.error("Red-light module failed after calibration: %s", exc)
+
         self._running = True
         t = threading.Thread(target=self._run_loop, daemon=True)
         t.start()
         logger.info("VideoProcessor started.")
+
+    def _is_calibrated(self) -> bool:
+        from pathlib import Path  # noqa: PLC0415
+        import json  # noqa: PLC0415
+        p = Path(self._config_path)
+        if not p.exists():
+            return False
+        try:
+            cfg = json.loads(p.read_text())
+            return bool(cfg.get("calibrated", False))
+        except Exception:
+            return False
+
+    def _run_calibration(self) -> None:
+        from app.detection.violations.red_light import CalibrationTool  # noqa: PLC0415
+        logger.info(
+            "Calibration required — a window will open with the first video frame.\n"
+            "  1. Click 2 points to draw the STOP LINE (red — cars must not cross when RED)\n"
+            "  2. Click 2 points to mark the SIGNAL ROI (orange — where to read the light)\n"
+            "  3. Press ENTER to confirm or ESC to redo."
+        )
+        source = settings.VIDEO_SOURCE
+        cap_source: str | int = int(source) if source.isdigit() else source
+        tool = CalibrationTool()
+        tool.run(str(cap_source))
+        tool.save_config(self._config_path)
+        logger.info("Calibration complete — config saved to %s", self._config_path)
 
     def stop(self) -> None:
         self._running = False

@@ -5,5 +5,5 @@
   "speed_line_a_y": 150,
   "speed_line_b_y": 300,
   "meters_per_pixel": 0.05,
-  "_note": "Run python -m backend.app.utils.line_selector to recalibrate"
+  "calibrated": false
 }

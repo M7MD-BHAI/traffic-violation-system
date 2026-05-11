@@ -28,7 +28,7 @@ class CalibrationTool:
     Saves calibration_config.json on completion.
     """
 
-    _WINDOW = "Calibration — Click 2pts stop-line, 2pts signal ROI, then ENTER"
+    _WINDOW = "CALIBRATION — Red Light Setup"
 
     def __init__(self) -> None:
         self._clicks: list[tuple[int, int]] = []
@@ -54,21 +54,52 @@ class CalibrationTool:
 
         while True:
             display = frame.copy()
-            for i, (x, y) in enumerate(self._clicks):
-                color = (0, 0, 255) if i < 2 else (255, 128, 0)
-                cv2.circle(display, (x, y), 7, color, -1)
-                cv2.putText(display, str(i + 1), (x + 8, y - 8),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            if len(self._clicks) == 2:
-                cv2.line(display, self._clicks[0], self._clicks[1], (0, 0, 255), 2)
+            n = len(self._clicks)
+
+            # ── Instruction text ──────────────────────────────────────────
+            if n < 2:
+                msg = f"STOP LINE — click point {n + 1} of 2"
+                cv2.putText(display, msg, (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            elif n < 4:
+                msg = f"SIGNAL ROI — click point {n - 1} of 2"
+                cv2.putText(display, msg, (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 128, 0), 2)
+            else:
+                cv2.putText(display, "Press ENTER to confirm  |  ESC to redo", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
+
+            # ── Stop-line points + line ───────────────────────────────────
+            for i in range(min(n, 2)):
+                x, y = self._clicks[i]
+                cv2.circle(display, (x, y), 8, (0, 0, 255), -1)
+                cv2.putText(display, str(i + 1), (x + 10, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            if n >= 2:
+                cv2.line(display, self._clicks[0], self._clicks[1], (0, 0, 255), 3)
+                mid_x = (self._clicks[0][0] + self._clicks[1][0]) // 2
+                mid_y = (self._clicks[0][1] + self._clicks[1][1]) // 2
+                cv2.putText(display, "STOP LINE", (mid_x - 40, mid_y - 12),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 255), 2)
+
+            # ── Signal ROI points + rectangle ─────────────────────────────
+            for i in range(2, min(n, 4)):
+                x, y = self._clicks[i]
+                cv2.circle(display, (x, y), 8, (255, 128, 0), -1)
+                cv2.putText(display, str(i - 1), (x + 10, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 128, 0), 2)
+            if n == 4:
+                cv2.rectangle(display, self._clicks[2], self._clicks[3], (255, 128, 0), 2)
+                cv2.putText(display, "SIGNAL", (self._clicks[2][0], self._clicks[2][1] - 8),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 128, 0), 2)
 
             cv2.imshow(self._WINDOW, display)
             key = cv2.waitKey(20) & 0xFF
-            if key == 13 and len(self._clicks) == 4:   # ENTER
+
+            if key == 13 and n == 4:    # ENTER — confirm
                 break
-            if key == 27:                                # ESC
-                cv2.destroyAllWindows()
-                raise RuntimeError("Calibration cancelled by user")
+            if key == 27:               # ESC — redo from scratch
+                self._clicks.clear()
 
         cv2.destroyAllWindows()
 
@@ -76,12 +107,24 @@ class CalibrationTool:
         if len(self._clicks) < 4:
             raise RuntimeError("Calibration incomplete — 4 clicks required")
         h, w = self._frame_shape[:2]
+
+        # Merge with existing config so speed lines / meters_per_pixel are preserved
+        existing: dict = {}
+        p = Path(path)
+        if p.exists():
+            try:
+                existing = json.loads(p.read_text())
+            except Exception:
+                pass
+
         config = {
+            **existing,
             "violation_line": [list(self._clicks[0]), list(self._clicks[1])],
             "signal_roi":     [list(self._clicks[2]), list(self._clicks[3])],
             "resolution":     [w, h],
+            "calibrated":     True,
         }
-        Path(path).write_text(json.dumps(config, indent=2))
+        p.write_text(json.dumps(config, indent=2))
         logger.info("Calibration config saved to %s", path)
         return config
 
