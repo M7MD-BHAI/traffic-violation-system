@@ -24,11 +24,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401: clear stale token and bounce to login
+// On 401: clear stale token and bounce to login (skip on the login request itself)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    if (error.response?.status === 401 && !isLoginRequest) {
       removeToken();
       window.location.href = '/login';
     }
