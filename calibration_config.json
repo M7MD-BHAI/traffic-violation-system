@@ -1,22 +1,22 @@
 {
   "violation_line": [
     [
-      1761,
-      801
+      65,
+      101
     ],
     [
-      271,
-      656
+      65,
+      248
     ]
   ],
   "signal_roi": [
     [
-      1339,
-      218
+      65,
+      195
     ],
     [
-      1627,
-      288
+      109,
+      248
     ]
   ],
   "resolution": [
@@ -26,27 +26,5 @@
   "speed_line_a_y": 150,
   "speed_line_b_y": 300,
   "meters_per_pixel": 0.05,
-  "calibrated": true,
-  "lane_polygon": [
-    [
-      405,
-      626
-    ],
-    [
-      4,
-      728
-    ],
-    [
-      9,
-      1071
-    ],
-    [
-      1585,
-      1070
-    ],
-    [
-      1771,
-      758
-    ]
-  ]
+  "calibrated": true
 }

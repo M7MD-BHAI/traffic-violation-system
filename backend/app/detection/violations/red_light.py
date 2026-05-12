@@ -606,10 +606,15 @@ class ViolationManager:
                         "confidence":     box["confidence"],
                     }
 
-                    _executor.submit(self._persist, record)
-
                     if self._anpr is not None:
-                        self._anpr.trigger(frame, box["bbox"], tid)
+                        frame_for_anpr = frame.copy()
+                        future = _executor.submit(self._persist, record)
+                        future.add_done_callback(
+                            lambda f, frame_snapshot=frame_for_anpr, bbox=box["bbox"], track_id=tid:
+                            self._trigger_anpr_after_persist(f, frame_snapshot, bbox, track_id)
+                        )
+                    else:
+                        _executor.submit(self._persist, record)
 
                     violations.append(record)
             else:
@@ -743,10 +748,24 @@ class ViolationManager:
         cv2.imwrite(str(out_dir / filename), crop, [cv2.IMWRITE_JPEG_QUALITY, 92])
         return f"/static/violations/{filename}"
 
-    def _persist(self, record: dict) -> None:
+    def _trigger_anpr_after_persist(
+        self,
+        future: object,
+        frame: np.ndarray,
+        bbox: list[float],
+        track_id: int,
+    ) -> None:
+        try:
+            violation_id = future.result()
+            if violation_id is not None and self._anpr is not None:
+                self._anpr.trigger(frame, bbox, track_id, violation_id=violation_id)
+        except Exception as exc:
+            logger.error("Red-light ANPR trigger failed track_id=%d: %s", track_id, exc)
+
+    def _persist(self, record: dict) -> int | None:
         db = SessionLocal()
         try:
-            insert_violation(
+            violation = insert_violation(
                 db,
                 ViolationCreate(
                     track_id=record["track_id"],
@@ -758,10 +777,12 @@ class ViolationManager:
                     frame_idx=record["frame_idx"],
                 ),
             )
+            return violation.id
         except Exception as exc:
             logger.error(
                 "DB persist failed for red-light violation track_id=%d: %s",
                 record["track_id"], exc,
             )
+            return None
         finally:
             db.close()

@@ -25,6 +25,8 @@ _CRASH_DURATION: float = 5.0               # seconds both slow after overlap →
 _FRAME_BUFFER_SIZE: int = 90               # 3 s rolling buffer at 30 fps
 _CLIP_FPS: int = 30
 _EXCLUSION_MARGIN: float = 40.0            # px around stop-line that is excluded
+_PIXEL_SPEED_SLOW_THRESHOLD: float = 3.0   # px/s fallback when km/h unavailable
+_PIXEL_SPEED_FAST_THRESHOLD: float = 20.0  # px/s fallback when km/h unavailable
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
@@ -51,6 +53,7 @@ class AccidentDetector:
         # Per-vehicle slow-start timestamps and fast-history set
         self._slow_since: dict[int, float] = {}
         self._was_fast: set[int] = set()
+        self._centroid_history: dict[int, tuple[float, float, float]] = {}
 
         # Crash pair tracking: frozenset({id_a, id_b}) → timestamp when overlap+slow began
         self._overlap_since: dict[frozenset, float] = {}
@@ -64,6 +67,16 @@ class AccidentDetector:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def reset_state(self) -> None:
+        """Clear per-track accident state when a video source/replay restarts."""
+        self._frame_buffer.clear()
+        self._slow_since.clear()
+        self._was_fast.clear()
+        self._centroid_history.clear()
+        self._overlap_since.clear()
+        self._alerted.clear()
+        logger.info("Accident detector track state reset.")
 
     def process_frame(
         self,
@@ -81,14 +94,19 @@ class AccidentDetector:
         for gone_id in list(self._slow_since.keys()):
             if gone_id not in current_ids:
                 del self._slow_since[gone_id]
+        for gone_id in list(self._centroid_history.keys()):
+            if gone_id not in current_ids:
+                del self._centroid_history[gone_id]
 
         # Update fast-history and slow-since for every tracked vehicle
+        frame_speeds: dict[int, float] = {}
         for box in tracked:
             tid = box["track_id"]
-            speed = speed_map.get(tid, 999.0)
-            if speed > _STAGNATION_WAS_FAST:
+            speed = self._get_motion_speed(tid, box, speed_map, now)
+            frame_speeds[tid] = speed
+            if speed > _STAGNATION_WAS_FAST or speed > _PIXEL_SPEED_FAST_THRESHOLD:
                 self._was_fast.add(tid)
-            if speed < _STAGNATION_SPEED_THRESHOLD:
+            if speed < _STAGNATION_SPEED_THRESHOLD or speed < _PIXEL_SPEED_SLOW_THRESHOLD:
                 self._slow_since.setdefault(tid, now)
             else:
                 self._slow_since.pop(tid, None)
@@ -125,11 +143,11 @@ class AccidentDetector:
                     continue
 
                 iou = compute_iou(boxes[i]["bbox"], boxes[j]["bbox"])
-                speed_a = speed_map.get(tid_a, 999.0)
-                speed_b = speed_map.get(tid_b, 999.0)
+                speed_a = frame_speeds.get(tid_a, 999.0)
+                speed_b = frame_speeds.get(tid_b, 999.0)
                 both_slow = (
-                    speed_a < _CRASH_SPEED_THRESHOLD
-                    and speed_b < _CRASH_SPEED_THRESHOLD
+                    (speed_a < _CRASH_SPEED_THRESHOLD or speed_a < _PIXEL_SPEED_SLOW_THRESHOLD)
+                    and (speed_b < _CRASH_SPEED_THRESHOLD or speed_b < _PIXEL_SPEED_SLOW_THRESHOLD)
                 )
 
                 if iou > _CRASH_IOU_THRESHOLD and both_slow:
@@ -160,6 +178,32 @@ class AccidentDetector:
         if abs(cy - self._stop_line_y) < _EXCLUSION_MARGIN:
             return True
         return False
+
+    def _get_motion_speed(
+        self,
+        track_id: int,
+        box: TrackedBox,
+        speed_map: dict[int, float],
+        now: float,
+    ) -> float:
+        """
+        Prefer calibrated km/h from the speed module. If unavailable, estimate
+        tracking motion in px/s so accident detection still works before a
+        vehicle crosses the speed trap lines.
+        """
+        if track_id in speed_map:
+            return speed_map[track_id]
+
+        cx, cy = _centroid(box["bbox"])
+        previous = self._centroid_history.get(track_id)
+        self._centroid_history[track_id] = (cx, cy, now)
+        if previous is None:
+            return 999.0
+
+        prev_x, prev_y, prev_ts = previous
+        dt = max(1e-3, now - prev_ts)
+        distance_px = ((cx - prev_x) ** 2 + (cy - prev_y) ** 2) ** 0.5
+        return distance_px / dt
 
     def _save_clip(self, track_id: int, label: str) -> str:
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")

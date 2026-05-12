@@ -91,6 +91,13 @@ class HybridSpeedService:
 
     # ── Public API ─────────────────────────────────────────────────────────
 
+    def reset_state(self) -> None:
+        """Clear per-track speed state when a video source/replay restarts."""
+        self._cache_matrix.clear()
+        self._speed_labels.clear()
+        self._violation_ids.clear()
+        logger.info("Speed detector track state reset.")
+
     def process_frame(
         self,
         frame: np.ndarray,
@@ -152,10 +159,15 @@ class HybridSpeedService:
                         "image_path":     image_path,
                     }
 
-                    _executor.submit(self._persist, record)
-
                     if self._anpr is not None:
-                        self._anpr.trigger(frame, box["bbox"], tid)
+                        frame_for_anpr = frame.copy()
+                        future = _executor.submit(self._persist, record)
+                        future.add_done_callback(
+                            lambda f, frame_snapshot=frame_for_anpr, bbox=box["bbox"], track_id=tid:
+                            self._trigger_anpr_after_persist(f, frame_snapshot, bbox, track_id)
+                        )
+                    else:
+                        _executor.submit(self._persist, record)
 
                     violations.append(record)
 
@@ -218,10 +230,24 @@ class HybridSpeedService:
         cv2.imwrite(str(out_dir / filename), crop)
         return f"/static/violations/{filename}"
 
-    def _persist(self, record: dict) -> None:
+    def _trigger_anpr_after_persist(
+        self,
+        future: object,
+        frame: np.ndarray,
+        bbox: list[float],
+        track_id: int,
+    ) -> None:
+        try:
+            violation_id = future.result()
+            if violation_id is not None and self._anpr is not None:
+                self._anpr.trigger(frame, bbox, track_id, violation_id=violation_id)
+        except Exception as exc:
+            logger.error("Speed ANPR trigger failed track_id=%d: %s", track_id, exc)
+
+    def _persist(self, record: dict) -> int | None:
         db = SessionLocal()
         try:
-            insert_violation(
+            violation = insert_violation(
                 db,
                 ViolationCreate(
                     track_id=record["track_id"],
@@ -234,10 +260,12 @@ class HybridSpeedService:
                     frame_idx=record["frame_idx"],
                 ),
             )
+            return violation.id
         except Exception as exc:
             logger.error(
                 "DB persist failed for speed violation track_id=%d: %s",
                 record["track_id"], exc,
             )
+            return None
         finally:
             db.close()

@@ -31,9 +31,14 @@ class RoadDensityService:
     video loop — the write is dispatched to a ThreadPoolExecutor.
     """
 
-    def __init__(self, road_id: str, lane_polygon: list, backend_url: str) -> None:
+    def __init__(
+        self,
+        road_id: str,
+        lane_polygon: list | None,
+        backend_url: str,
+    ) -> None:
         self._road_id = road_id
-        self._lane_polygon = lane_polygon   # list of [x, y] vertices
+        self._lane_polygon = lane_polygon   # list of [x, y] vertices; None = full frame
         self._backend_url = backend_url
         self._last_report_ts: float = 0.0
 
@@ -47,7 +52,7 @@ class RoadDensityService:
 
         for box in tracked_boxes:
             cx, cy = centroid(box["bbox"])
-            if not point_in_polygon((cx, cy), self._lane_polygon):
+            if self._lane_polygon is not None and not point_in_polygon((cx, cy), self._lane_polygon):
                 continue
             occupancy += 1
             # Use shared speed_map written by M3; default high speed if unknown

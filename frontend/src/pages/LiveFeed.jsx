@@ -51,6 +51,21 @@ function StatTile({ label, value, sub, accentColor }) {
   );
 }
 
+function ModulePill({ label, active }) {
+  return (
+    <span
+      className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider"
+      style={{
+        backgroundColor: active ? 'var(--green-dim)' : 'var(--elevated)',
+        color: active ? 'var(--green)' : 'var(--text-3)',
+        border: `1px solid ${active ? 'var(--green)' : 'var(--border)'}`,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 // ── Stream offline placeholder ────────────────────────────────────────────────
 function StreamOffline() {
   return (
@@ -271,6 +286,7 @@ export default function LiveFeed() {
   const sigState  = videoStats?.signal_state ?? 'UNKNOWN';
   const sigCfg    = SIGNAL_COLOR[sigState] || SIGNAL_COLOR.UNKNOWN;
   const topRoad   = congestion?.recommendations?.[0];
+  const modules   = videoStats?.modules || {};
 
   // ── Shared canvas container style ─────────────────────────────────────────
   const canvasContainer = {
@@ -544,6 +560,20 @@ export default function LiveFeed() {
                   value={topRoad?.road_id ? topRoad.road_id.replace(/_/g, ' ') : '—'}
                   sub={topRoad ? `CI ${topRoad.density_index}` : '—'} />
                 <StatTile label="Violations" value={violations.length || '—'} sub="latest 6 shown" />
+              </div>
+              <div className="card p-4 flex flex-col gap-3">
+                <h2 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-2)' }}>
+                  Active Modules
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  <ModulePill label="YOLO" active={modules.primary_yolo} />
+                  <ModulePill label="Red" active={modules.red_light} />
+                  <ModulePill label="Helmet" active={modules.helmet} />
+                  <ModulePill label="Speed" active={modules.speed} />
+                  <ModulePill label="ANPR" active={modules.anpr} />
+                  <ModulePill label="Congestion" active={modules.congestion} />
+                  <ModulePill label="Accident" active={modules.accident} />
+                </div>
               </div>
             </div>
           </div>

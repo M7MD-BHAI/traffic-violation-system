@@ -23,8 +23,6 @@ _COLOR_OK = (0, 255, 0)         # green — unviolating vehicle box
 _COLOR_VIOLATION = (0, 0, 255)  # red — violating vehicle box
 _COLOR_HUD = (255, 255, 255)    # white HUD text
 
-# Fallback lane polygon when calibration has no polygon data (full-frame middle band)
-_FALLBACK_POLYGON = [[0, 100], [640, 100], [640, 380], [0, 380]]
 _DEFAULT_ROAD_ID = "main_road"
 
 
@@ -96,7 +94,7 @@ class VideoProcessor:
         try:
             self._density = RoadDensityService(
                 road_id=_DEFAULT_ROAD_ID,
-                lane_polygon=_FALLBACK_POLYGON,
+                lane_polygon=None,
                 backend_url=settings.BACKEND_URL,
             )
         except Exception as exc:
@@ -175,6 +173,19 @@ class VideoProcessor:
             "fps": round(self._fps, 1),
             "track_count": self._track_count,
             "signal_state": self._signal_state,
+            "modules": {
+                "primary_yolo": True,
+                "red_light": self._red_light is not None,
+                "helmet": self._helmet is not None,
+                "speed": self._speed is not None,
+                "anpr": any(
+                    module is not None and getattr(module, "_anpr", None) is not None
+                    for module in (self._red_light, self._helmet, self._speed)
+                ),
+                "congestion": self._density is not None,
+                "counter": self._counter is not None,
+                "accident": self._accident is not None,
+            },
         }
 
     def process_video(self, source: str | int) -> None:
@@ -225,8 +236,15 @@ class VideoProcessor:
     def _reset_per_run_state(self) -> None:
         """Clear track-dependent state at source start/replay boundaries."""
         vehicle_history.y_prev.clear()
+        vehicle_history.speed_map.clear()
         if self._red_light is not None:
             self._red_light.reset_state()
+        if self._helmet is not None:
+            self._helmet.reset_state()
+        if self._speed is not None:
+            self._speed.reset_state()
+        if self._accident is not None:
+            self._accident.reset_state()
 
     def _process_frame(self, frame: np.ndarray, frame_idx: int) -> np.ndarray:
         # ── Step 1: ONE YOLO inference ─────────────────────────────────────

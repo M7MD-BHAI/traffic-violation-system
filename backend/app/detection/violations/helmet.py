@@ -17,7 +17,6 @@ from app.schemas.violation import ViolationCreate
 logger = logging.getLogger(__name__)
 
 _MOTORCYCLE_CLASS_ID = 3
-_BARE_HEAD_CLASS = 1      # helmet model class index 1 → "Without Helmet"
 _VOTE_WINDOW = 15
 _VOTE_THRESHOLD = 0.70    # 11/15 frames bare → confirmed violation
 
@@ -47,6 +46,12 @@ class HelmetViolationDetector:
 
         self._tracker = VehicleTracker(primary_model)
         self._helmet_model = get_helmet_model()
+        self._bare_head_classes = self._resolve_bare_head_classes()
+        logger.info(
+            "Helmet model loaded from %s; bare-head classes=%s",
+            helmet_model_path,
+            sorted(self._bare_head_classes),
+        )
 
         # track_id → sliding window of bool votes (bare_head detected in that frame?)
         self._vote_buffer: dict[int, deque[bool]] = {}
@@ -65,6 +70,31 @@ class HelmetViolationDetector:
             )
         except Exception as exc:
             logger.warning("ANPR service not available: %s", exc)
+
+    def reset_state(self) -> None:
+        """Clear per-track helmet voting state when a video source/replay restarts."""
+        self._vote_buffer.clear()
+        self._confirmed_ids.clear()
+        self._rl_violations.clear()
+        logger.info("Helmet detector track state reset.")
+
+    def _resolve_bare_head_classes(self) -> set[int]:
+        """
+        Detect bare-head/no-helmet class IDs from the custom model metadata.
+        Falls back to class 1 for older two-class helmet models.
+        """
+        names = getattr(self._helmet_model, "names", {}) or {}
+        bare_ids: set[int] = set()
+        for class_id, label in names.items():
+            normalised = str(label).lower().replace("_", " ").replace("-", " ")
+            if (
+                "bare" in normalised
+                or "without" in normalised
+                or "no helmet" in normalised
+                or "non helmet" in normalised
+            ):
+                bare_ids.add(int(class_id))
+        return bare_ids or {1}
 
     def register_existing_violations(self, violations: dict[int, dict]) -> None:
         """
@@ -111,7 +141,7 @@ class HelmetViolationDetector:
                 results = self._helmet_model(head_roi, verbose=False)
                 if results and results[0].boxes is not None:
                     for det in results[0].boxes:
-                        if int(det.cls[0]) == _BARE_HEAD_CLASS:
+                        if int(det.cls[0]) in self._bare_head_classes:
                             bare_count += 1
                 # No boxes returned → treat as helmet present (safer default)
             except Exception as exc:
@@ -154,11 +184,15 @@ class HelmetViolationDetector:
                 "bbox":             [x1, y1, x2, y2],
             }
 
-            _executor.submit(self._persist, record)
-
             if self._anpr is not None:
-                # Always pass full motorcycle bbox to ANPR, never the head crop
-                self._anpr.trigger(frame, [x1, y1, x2, y2], tid)
+                frame_for_anpr = frame.copy()
+                future = _executor.submit(self._persist, record)
+                future.add_done_callback(
+                    lambda f, frame_snapshot=frame_for_anpr, bbox=[x1, y1, x2, y2], track_id=tid:
+                    self._trigger_anpr_after_persist(f, frame_snapshot, bbox, track_id)
+                )
+            else:
+                _executor.submit(self._persist, record)
 
             violations.append(record)
 
@@ -210,10 +244,24 @@ class HelmetViolationDetector:
         cv2.imwrite(str(out_dir / filename), composite)
         return f"/static/violations/{filename}"
 
-    def _persist(self, record: dict) -> None:
+    def _trigger_anpr_after_persist(
+        self,
+        future: object,
+        frame: np.ndarray,
+        bbox: list[int],
+        track_id: int,
+    ) -> None:
+        try:
+            violation_id = future.result()
+            if violation_id is not None and self._anpr is not None:
+                self._anpr.trigger(frame, bbox, track_id, violation_id=violation_id)
+        except Exception as exc:
+            logger.error("Helmet ANPR trigger failed track_id=%d: %s", track_id, exc)
+
+    def _persist(self, record: dict) -> int | None:
         db = SessionLocal()
         try:
-            insert_violation(
+            violation = insert_violation(
                 db,
                 ViolationCreate(
                     track_id=record["track_id"],
@@ -226,6 +274,7 @@ class HelmetViolationDetector:
                     merged_with=record.get("merged_with_id"),
                 ),
             )
+            return violation.id
         except Exception as exc:
             logger.error(
                 "DB persist failed for helmet violation track_id=%d: %s",
@@ -234,7 +283,7 @@ class HelmetViolationDetector:
             # Spec: merged violation fails → create new record as fallback
             if record.get("merged_with_id") is not None:
                 try:
-                    insert_violation(
+                    violation = insert_violation(
                         db,
                         ViolationCreate(
                             track_id=record["track_id"],
@@ -246,7 +295,9 @@ class HelmetViolationDetector:
                             frame_idx=record["frame_idx"],
                         ),
                     )
+                    return violation.id
                 except Exception as fallback_exc:
                     logger.error("Fallback persist also failed: %s", fallback_exc)
+            return None
         finally:
             db.close()

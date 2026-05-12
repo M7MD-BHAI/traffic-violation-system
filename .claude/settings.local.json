@@ -3,7 +3,21 @@
     "allow": [
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(npm --version)",
+      "Bash(pip3 --version)",
+      "PowerShell(pip *)",
+      "PowerShell(Get-Command *)",
+      "Bash(git fetch *)",
+      "Bash(git rebase *)",
+      "Bash(git stash *)",
+      "Bash(git checkout *)",
+      "Bash(git merge fix/login-issue --no-ff -m ' *)",
+      "Bash(python *)",
+      "Bash(dir \"C:/Users/muham/Downloads/\" /b)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\muham\\\\traffic-violation-system\\\\frontend\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(npm run *)"
     ]
   }
 }
