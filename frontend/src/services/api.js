@@ -135,8 +135,13 @@ export const uploadVideo = (file) => {
 export const getFirstFrameUrl = () =>
   `${BACKEND_URL}/video/first-frame?_=${Date.now()}`;
 
-export const saveCalibration = (stop_line, signal_roi, lane_polygon = null) =>
-  api.post('/video/calibration', { stop_line, signal_roi, lane_polygon }).then((r) => r.data);
+export const saveCalibration = (stop_line, signal_roi, lane_polygon = null, resolution = null) =>
+  api.post('/video/calibration', {
+    stop_line,
+    signal_roi,
+    lane_polygon,
+    resolution,
+  }).then((r) => r.data);
 
 // ── Health ─────────────────────────────────────────────────────────────────
 export const healthCheck = () => api.get('/health').then((r) => r.data);

@@ -13,11 +13,12 @@ from app.crud.violations import insert_violation
 from app.database.connection import SessionLocal
 from app.detection.tracking.vehicle_tracker import TrackedBox, VehicleTracker
 from app.schemas.violation import ViolationCreate
-from app.utils.geometry import line_crossing_check
 
 logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=2)
+_CONFIRMED_ID_TTL_FRAMES = 30
+_STOP_LINE_TOLERANCE_PX = 8.0
 
 
 class CalibrationTool:
@@ -266,6 +267,21 @@ def _line_y_at_x(line_pts: list[list[float]], x: float) -> float:
     return y1 + t * (y2 - y1)
 
 
+def _signed_line_side(line_pts: list[list[float]], x: float, y: float) -> float:
+    """Return signed side of point (x, y) relative to the stop-line segment."""
+    (x1, y1), (x2, y2) = line_pts[0], line_pts[1]
+    return (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)
+
+
+def _signed_line_distance(line_pts: list[list[float]], x: float, y: float) -> float:
+    """Return signed perpendicular distance in pixels from point to stop line."""
+    (x1, y1), (x2, y2) = line_pts[0], line_pts[1]
+    length = float(np.hypot(x2 - x1, y2 - y1))
+    if length <= 1e-6:
+        return 0.0
+    return _signed_line_side(line_pts, x, y) / length
+
+
 class ViolationManager:
     """
     M1 — Red Light Violation Detection.
@@ -316,6 +332,9 @@ class ViolationManager:
         self._tracker = VehicleTracker(model)
         self._signal_detector = SignalStateDetector(cfg["signal_roi"])
         self._confirmed_ids: set[int] = set()
+        self._last_seen_frame: dict[int, int] = {}
+        self._prev_anchor_by_id: dict[int, tuple[float, float]] = {}
+        self._approach_side_sign: float = self._infer_approach_side_sign()
         self.last_signal_state: str = "UNKNOWN"
 
         # ── Calibration sanity check ───────────────────────────────────────
@@ -362,6 +381,10 @@ class ViolationManager:
             cfg["signal_roi"],
             f"{len(polygon_pts)} vertices" if polygon_pts else "NONE (all vehicles eligible)",
         )
+        logger.info(
+            "Red-light crossing direction uses monitored-zone side sign=%+.0f",
+            self._approach_side_sign,
+        )
 
         self._anpr = None
         try:
@@ -375,6 +398,56 @@ class ViolationManager:
             logger.warning("ANPR service not available: %s", exc)
 
     # ── Public interface ───────────────────────────────────────────────────
+
+    def reset_state(self) -> None:
+        """Clear per-track red-light state when a video source/replay restarts."""
+        self._confirmed_ids.clear()
+        self._last_seen_frame.clear()
+        self._prev_anchor_by_id.clear()
+        logger.info("Red-light track state reset.")
+
+    def _infer_approach_side_sign(self) -> float:
+        """
+        Infer which side of the diagonal stop line belongs to the monitored
+        lane. A violation moves from this side to the opposite side.
+        """
+        if self._lane_polygon is None or len(self._lane_polygon) < 3:
+            return -1.0
+
+        centroid = np.mean(self._lane_polygon, axis=0)
+        side = _signed_line_side(
+            self._line_pts,
+            float(centroid[0]),
+            float(centroid[1]),
+        )
+        if abs(side) < 1e-6:
+            return -1.0
+        return 1.0 if side > 0 else -1.0
+
+    def _violation_anchor(self, bbox: list[float]) -> tuple[float, float]:
+        """
+        Use the vehicle edge that clears the stop line last for crossing.
+        ROI filtering still uses bottom-centre, but red-light violation timing
+        should happen only after the full bounding region has crossed the line.
+        """
+        x1, y1, x2, y2 = bbox
+        x_mid = (x1 + x2) / 2.0
+        y_mid = (y1 + y2) / 2.0
+        candidates = [
+            (float(x1), float(y1)),
+            (float(x2), float(y1)),
+            (float(x1), float(y2)),
+            (float(x2), float(y2)),
+            (x_mid, float(y1)),
+            (x_mid, float(y2)),
+            (float(x1), y_mid),
+            (float(x2), y_mid),
+        ]
+        return max(
+            candidates,
+            key=lambda pt: _signed_line_distance(self._line_pts, pt[0], pt[1])
+            * self._approach_side_sign,
+        )
 
     def _is_in_monitored_zone(self, x: float, y: float) -> bool:
         """
@@ -407,22 +480,41 @@ class ViolationManager:
 
         if tracked is None:
             tracked = self._tracker.update(frame)
-        if not tracked:
-            return []
 
-        # Remove stale y_prev entries for vehicles no longer in frame
-        active_ids = {box["track_id"] for box in tracked}
+        # Remove stale y_prev entries for vehicles no longer in frame. Confirmed
+        # IDs expire after a short absence so BoT-SORT ID reuse cannot suppress
+        # later vehicles that receive the same numeric track_id.
+        active_ids = {box["track_id"] for box in tracked} if tracked else set()
         for stale_id in set(vehicle_history.y_prev.keys()) - active_ids:
             vehicle_history.y_prev.pop(stale_id, None)
+            self._prev_anchor_by_id.pop(stale_id, None)
+        for stale_id, last_seen in list(self._last_seen_frame.items()):
+            if stale_id in active_ids:
+                continue
+            if frame_idx - last_seen > _CONFIRMED_ID_TTL_FRAMES:
+                self._last_seen_frame.pop(stale_id, None)
+                self._prev_anchor_by_id.pop(stale_id, None)
+                self._confirmed_ids.discard(stale_id)
+                logger.debug(
+                    "Pruned stale red-light track state tid=%d at frame=%d",
+                    stale_id, frame_idx,
+                )
+
+        if not tracked:
+            return []
 
         violations: list[dict] = []
 
         for box in tracked:
             tid = box["track_id"]
+            self._last_seen_frame[tid] = frame_idx
             x1, y1, x2, y2 = box["bbox"]
             x_bc = (x1 + x2) / 2.0
             y_bc = float(y2)
-            line_y_here = _line_y_at_x(self._line_pts, x_bc)
+            x_anchor, y_anchor = self._violation_anchor(box["bbox"])
+            line_y_here = _line_y_at_x(self._line_pts, x_anchor)
+            curr_side = _signed_line_distance(self._line_pts, x_anchor, y_anchor)
+            curr_approach_side = curr_side * self._approach_side_sign
 
             # ── ROI filter ─────────────────────────────────────────────────
             # Test the vehicle's bottom-centre against the lane polygon BEFORE
@@ -435,9 +527,9 @@ class ViolationManager:
 
             logger.debug(
                 "frame=%d  tid=%d  cls=%s  x_bc=%.0f  y_bc=%.1f  "
-                "line_y=%.1f  signal=%s  in_roi=%s",
+                "x_clear=%.0f  y_clear=%.1f  line_y=%.1f  signal=%s  in_roi=%s",
                 frame_idx, tid, box["class_name"],
-                x_bc, y_bc, line_y_here, signal_state, in_roi,
+                x_bc, y_bc, x_anchor, y_anchor, line_y_here, signal_state, in_roi,
             )
 
             if not in_roi:
@@ -449,21 +541,32 @@ class ViolationManager:
                     "IGNORED (out-of-ROI)  frame=%d  tid=%d  x_bc=%.0f  y_bc=%.1f",
                     frame_idx, tid, x_bc, y_bc,
                 )
+                self._prev_anchor_by_id.pop(tid, None)
                 continue
 
             # ── Crossing check (in-ROI vehicles only) ─────────────────────
-            if tid in vehicle_history.y_prev:
-                y_prev_val = vehicle_history.y_prev[tid]
-                v = y_bc - y_prev_val
-                crossed = line_crossing_check(y_prev_val, y_bc, line_y_here)
+            if tid in self._prev_anchor_by_id:
+                x_prev_val, y_prev_val = self._prev_anchor_by_id[tid]
+                v = y_anchor - y_prev_val
+                prev_line_y = _line_y_at_x(self._line_pts, x_prev_val)
+                prev_side = _signed_line_distance(self._line_pts, x_prev_val, y_prev_val)
+                prev_approach_side = prev_side * self._approach_side_sign
+                crossed = (
+                    prev_approach_side >= -_STOP_LINE_TOLERANCE_PX
+                    and curr_approach_side < -_STOP_LINE_TOLERANCE_PX
+                )
 
                 logger.debug(
                     "CROSSING CHECK  frame=%d  tid=%d  "
-                    "y_prev=%.1f  y_bc=%.1f  v=%.1f  "
-                    "line_y=%.1f  crossed=%s  signal=%s  already_confirmed=%s",
+                    "x_prev=%.0f  y_prev=%.1f  x_clear=%.0f  y_clear=%.1f  v=%.1f  "
+                    "prev_line_y=%.1f  line_y=%.1f  prev_dist=%.1f  curr_dist=%.1f  "
+                    "approach_prev=%.1f  approach_curr=%.1f  crossed=%s  "
+                    "signal=%s  already_confirmed=%s",
                     frame_idx, tid,
-                    y_prev_val, y_bc, v,
-                    line_y_here, crossed, signal_state,
+                    x_prev_val, y_prev_val, x_anchor, y_anchor, v,
+                    prev_line_y, line_y_here, prev_side, curr_side,
+                    prev_approach_side, curr_approach_side, crossed,
+                    signal_state,
                     tid in self._confirmed_ids,
                 )
 
@@ -472,8 +575,8 @@ class ViolationManager:
                         "LINE CROSS  tid=%d  x=%.0f  "
                         "y_prev=%.1f → y_curr=%.1f  line_y@x=%.1f  "
                         "signal=%s  frame=%d",
-                        tid, x_bc,
-                        y_prev_val, y_bc, line_y_here,
+                        tid, x_anchor,
+                        y_prev_val, y_anchor, line_y_here,
                         signal_state, frame_idx,
                     )
 
@@ -487,7 +590,7 @@ class ViolationManager:
                         "RED-LIGHT VIOLATION  tid=%d  frame=%d  bbox=%s  "
                         "y_prev=%.1f  y_bc=%.1f  line_y=%.1f",
                         tid, frame_idx, [int(v) for v in box["bbox"]],
-                        y_prev_val, y_bc, line_y_here,
+                        y_prev_val, y_anchor, line_y_here,
                     )
                     image_path = self._save_crop(frame, box["bbox"], tid, frame_idx)
 
@@ -513,6 +616,20 @@ class ViolationManager:
                 # No prior y position — vehicle first appeared in this frame
                 # (or just entered the ROI). Skip crossing check; next frame
                 # will have y_prev set and detection will work normally.
+                rear_side = _signed_line_distance(self._line_pts, x_bc, y_bc)
+                rear_approach_side = rear_side * self._approach_side_sign
+                first_seen_on_line = (
+                    curr_approach_side < -_STOP_LINE_TOLERANCE_PX
+                    and rear_approach_side > _STOP_LINE_TOLERANCE_PX
+                )
+                if curr_approach_side < -_STOP_LINE_TOLERANCE_PX:
+                    logger.warning(
+                        "FIRST-SEEN AFTER/ON STOP LINE  frame=%d  tid=%d  "
+                        "x_clear=%.0f  y_clear=%.1f  line_y=%.1f  dist=%.1f  rear_dist=%.1f  "
+                        "signal=%s  on_line=%s  no violation without prior crossing",
+                        frame_idx, tid, x_anchor, y_anchor, line_y_here,
+                        curr_approach_side, rear_approach_side, signal_state, first_seen_on_line,
+                    )
                 logger.debug(
                     "NO y_prev for tid=%d at frame=%d (first in-ROI detection) "
                     "— crossing check deferred to next frame",
@@ -522,6 +639,7 @@ class ViolationManager:
             # Update y_prev only for in-ROI vehicles so out-of-ROI transitions
             # cannot generate false positives.
             vehicle_history.y_prev[tid] = y_bc
+            self._prev_anchor_by_id[tid] = (x_anchor, y_anchor)
 
         return violations
 

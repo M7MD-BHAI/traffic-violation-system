@@ -18,6 +18,43 @@ class CalibrationBody(BaseModel):
     stop_line: list[list[int]]             # [[x1,y1],[x2,y2]]
     signal_roi: list[list[int]]            # [[x1,y1],[x2,y2]]
     lane_polygon: list[list[int]] | None = None  # ≥3 pts; None = no ROI filter
+    resolution: list[int] | None = None    # [w,h] from calibration canvas, optional
+
+
+def _point_distance(a: list[int], b: list[int]) -> float:
+    dx = float(a[0] - b[0])
+    dy = float(a[1] - b[1])
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _current_source_resolution() -> list[int] | None:
+    source = processor.get_source()
+    cap_source: int | str = int(source) if source.isdigit() else source
+    cap = cv2.VideoCapture(cap_source)
+    try:
+        ret, frame = cap.read()
+        if not ret:
+            return None
+        h, w = frame.shape[:2]
+        return [int(w), int(h)]
+    finally:
+        cap.release()
+
+
+def _validate_points_in_frame(
+    points: list[list[int]],
+    resolution: list[int] | None,
+    field_name: str,
+) -> None:
+    if resolution is None:
+        return
+    w, h = int(resolution[0]), int(resolution[1])
+    for x, y in points:
+        if x < 0 or y < 0 or x >= w or y >= h:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{field_name} point [{x}, {y}] is outside the {w}x{h} video frame",
+            )
 
 
 @router.post("/upload")
@@ -117,11 +154,30 @@ def set_calibration(body: CalibrationBody) -> dict:
             status_code=422,
             detail="stop_line and signal_roi must each contain exactly 2 points",
         )
+    if _point_distance(body.stop_line[0], body.stop_line[1]) < 10:
+        raise HTTPException(
+            status_code=422,
+            detail="stop_line endpoints are too close together; click two different points on the visual stop line",
+        )
+    roi_w = abs(body.signal_roi[1][0] - body.signal_roi[0][0])
+    roi_h = abs(body.signal_roi[1][1] - body.signal_roi[0][1])
+    if roi_w < 10 or roi_h < 10:
+        raise HTTPException(
+            status_code=422,
+            detail="signal_roi is too small; drag/click two opposite corners around the signal light",
+        )
     if body.lane_polygon is not None and len(body.lane_polygon) < 3:
         raise HTTPException(
             status_code=422,
             detail="lane_polygon must have at least 3 points",
         )
+
+    source_resolution = _current_source_resolution()
+    resolution = source_resolution or body.resolution
+    _validate_points_in_frame(body.stop_line, resolution, "stop_line")
+    _validate_points_in_frame(body.signal_roi, resolution, "signal_roi")
+    if body.lane_polygon:
+        _validate_points_in_frame(body.lane_polygon, resolution, "lane_polygon")
 
     existing: dict = {}
     if _CONFIG_PATH.exists():
@@ -136,6 +192,8 @@ def set_calibration(body: CalibrationBody) -> dict:
         "signal_roi":     body.signal_roi,
         "calibrated":     True,
     }
+    if resolution is not None:
+        config["resolution"] = resolution
     if body.lane_polygon:
         config["lane_polygon"] = body.lane_polygon
     else:

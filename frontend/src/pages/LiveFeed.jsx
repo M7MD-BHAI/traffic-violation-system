@@ -16,6 +16,14 @@ const SIGNAL_COLOR = {
   UNKNOWN: { bg: 'var(--elevated)',   color: 'var(--text-2)' },
 };
 
+const MIN_CALIBRATION_DISTANCE = 10;
+
+function distance(a, b) {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 // ── Step badge ────────────────────────────────────────────────────────────────
 function StepBadge({ n, label, active, done }) {
   const bg    = done ? 'var(--green)'  : active ? 'var(--accent)' : 'var(--elevated)';
@@ -205,6 +213,16 @@ export default function LiveFeed() {
     const y = Math.round((e.clientY - rect.top)  * (frameSize.h / rect.height));
     if (step === 'calibrate') {
       if (clicks.length >= 4) return;
+      const nextPoint = [x, y];
+      if (clicks.length === 1 && distance(clicks[0], nextPoint) < MIN_CALIBRATION_DISTANCE) {
+        setCalErr('Stop line needs two different points.');
+        return;
+      }
+      if (clicks.length === 3 && distance(clicks[2], nextPoint) < MIN_CALIBRATION_DISTANCE) {
+        setCalErr('Signal ROI needs two opposite corners.');
+        return;
+      }
+      setCalErr('');
       setClicks(prev => [...prev, [x, y]]);
     } else if (step === 'polygon') {
       setPolygon(prev => [...prev, [x, y]]);
@@ -220,7 +238,7 @@ export default function LiveFeed() {
       const y1 = Math.min(clicks[2][1], clicks[3][1]);
       const x2 = Math.max(clicks[2][0], clicks[3][0]);
       const y2 = Math.max(clicks[2][1], clicks[3][1]);
-      await saveCalibration(stop_line, [[x1, y1], [x2, y2]], null);
+      await saveCalibration(stop_line, [[x1, y1], [x2, y2]], null, [frameSize.w, frameSize.h]);
       setStep('polygon');
     } catch (err) {
       setCalErr(err.response?.data?.detail || 'Failed to save calibration.');
@@ -236,7 +254,7 @@ export default function LiveFeed() {
       const x2 = Math.max(clicks[2][0], clicks[3][0]);
       const y2 = Math.max(clicks[2][1], clicks[3][1]);
       const poly = skip ? null : polygon;
-      await saveCalibration(stop_line, [[x1, y1], [x2, y2]], poly);
+      await saveCalibration(stop_line, [[x1, y1], [x2, y2]], poly, [frameSize.w, frameSize.h]);
       setStep('stream'); setImgKey(k => k + 1); setStreaming(true);
     } catch (err) {
       setPolyErr(err.response?.data?.detail || 'Failed to save polygon.');

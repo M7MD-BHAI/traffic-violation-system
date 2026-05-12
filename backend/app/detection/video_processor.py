@@ -148,6 +148,7 @@ class VideoProcessor:
         """Re-read calibration_config.json and re-initialise the red-light module."""
         try:
             self._red_light = ViolationManager(self._config_path, get_primary_model())
+            vehicle_history.y_prev.clear()
             logger.info("Red-light module re-initialised with fresh calibration.")
         except Exception as exc:
             logger.error("Red-light re-init failed: %s", exc)
@@ -182,12 +183,14 @@ class VideoProcessor:
         if not cap.isOpened():
             raise RuntimeError(f"Cannot open video source: {source}")
 
+        self._reset_per_run_state()
         fps_counter = _FPSCounter()
         frame_idx = 0
         try:
             while self._running:
                 ok, frame = cap.read()
                 if not ok:
+                    self._reset_per_run_state()
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     ok, frame = cap.read()
                     if not ok:
@@ -218,6 +221,12 @@ class VideoProcessor:
         finally:
             self._running = False
             self._stopped_event.set()
+
+    def _reset_per_run_state(self) -> None:
+        """Clear track-dependent state at source start/replay boundaries."""
+        vehicle_history.y_prev.clear()
+        if self._red_light is not None:
+            self._red_light.reset_state()
 
     def _process_frame(self, frame: np.ndarray, frame_idx: int) -> np.ndarray:
         # ── Step 1: ONE YOLO inference ─────────────────────────────────────
@@ -359,12 +368,26 @@ class VideoProcessor:
             x1, y1, x2, y2 = (int(v) for v in box["bbox"])
             vtype = vtype_map.get(tid)
             color = _VTYPE_COLOR.get(vtype, _COLOR_OK) if vtype else _COLOR_OK
+            roi_status: str | None = None
+            if vtype is None and self._red_light is not None:
+                try:
+                    poly = self._red_light._lane_polygon
+                    if poly is not None:
+                        x_bc = (x1 + x2) / 2.0
+                        y_bc = float(y2)
+                        in_roi = self._red_light._is_in_monitored_zone(x_bc, y_bc)
+                        roi_status = "IN" if in_roi else "OUT"
+                        color = _COLOR_OK if in_roi else (110, 110, 110)
+                except Exception:
+                    roi_status = None
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
             base_label = f"{box['class_name']} #{tid}"
             if vtype:
                 base_label = f"[{vtype}] {base_label}"
+            elif roi_status is not None:
+                base_label = f"[{roi_status}] {base_label}"
             cv2.putText(frame, base_label, (x1, max(y1 - 6, 12)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
 
