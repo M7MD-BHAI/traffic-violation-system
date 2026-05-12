@@ -74,8 +74,12 @@ def get_one(
     return ViolationOut.model_validate(row)
 
 
-@router.delete("/{violation_id}", dependencies=[Depends(require_admin)])
-def remove(violation_id: int, db: Session = Depends(get_db)) -> dict:
+@router.delete("/{violation_id}")
+def remove(
+    violation_id: int,
+    db: Session = Depends(get_db),
+    _: object = Depends(get_current_user),
+) -> dict:
     if not delete_violation(db, violation_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Violation not found")
     return {"ok": True}

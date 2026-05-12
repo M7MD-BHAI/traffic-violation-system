@@ -156,6 +156,7 @@ export default function Violations() {
   const [selectMode, setSelectMode]   = useState(false);
   const [checkedIds, setCheckedIds]   = useState(new Set());
   const [deleting, setDeleting]       = useState(false);
+  const [deleteErr, setDeleteErr]     = useState('');
   const [confirm, setConfirm]         = useState(null);  // { message, onConfirm }
 
   // Filters
@@ -212,13 +213,19 @@ export default function Violations() {
 
   async function doDelete(ids) {
     setDeleting(true);
+    setDeleteErr('');
     try {
       await Promise.all(ids.map((id) => deleteViolation(id)));
-    } catch { /* individual failures are silent; refetch will show remaining */ }
-    setDeleting(false);
-    setCheckedIds(new Set());
-    setSelected(null);
-    await fetchViolations();
+      setCheckedIds(new Set());
+      setSelected(null);
+      exitSelectMode();
+      await fetchViolations();
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Delete failed.';
+      setDeleteErr(msg);
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function askDelete(ids, label) {
@@ -312,6 +319,14 @@ export default function Violations() {
           )}
         </div>
       </div>
+
+      {/* Error banner */}
+      {deleteErr && (
+        <div className="bg-red-900/50 border border-red-700 text-red-300 text-sm rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <span>{deleteErr}</span>
+          <button onClick={() => setDeleteErr('')} className="text-red-400 hover:text-white text-lg leading-none">×</button>
+        </div>
+      )}
 
       {/* Filter bar */}
       <form
