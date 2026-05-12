@@ -15,8 +15,9 @@ _CONFIG_PATH = Path("calibration_config.json")
 
 
 class CalibrationBody(BaseModel):
-    stop_line: list[list[int]]   # [[x1,y1],[x2,y2]]
-    signal_roi: list[list[int]]  # [[x1,y1],[x2,y2]]
+    stop_line: list[list[int]]             # [[x1,y1],[x2,y2]]
+    signal_roi: list[list[int]]            # [[x1,y1],[x2,y2]]
+    lane_polygon: list[list[int]] | None = None  # ≥3 pts; None = no ROI filter
 
 
 @router.post("/upload")
@@ -67,12 +68,18 @@ def get_debug() -> dict:
     """Snapshot of the red-light detector's live state — useful for diagnosing detection issues."""
     import app.detection.tracking.vehicle_history as vh
     rl = processor._red_light
+    lane_poly = (
+        rl._lane_polygon.tolist() if rl is not None and rl._lane_polygon is not None else None
+    )
     return {
         "red_light_active": rl is not None,
         "signal_state":     processor._signal_state,
         "frame_fps":        round(processor._fps, 1),
         "track_count":      processor._track_count,
+        "debug_overlay":    processor._debug,
         "line_pts":         rl._line_pts if rl else None,
+        "lane_polygon":     lane_poly,
+        "lane_polygon_active": lane_poly is not None,
         "signal_roi":       [
             [rl._signal_detector._x1, rl._signal_detector._y1],
             [rl._signal_detector._x2, rl._signal_detector._y2],
@@ -83,13 +90,37 @@ def get_debug() -> dict:
     }
 
 
+@router.post("/debug/overlay")
+def toggle_debug_overlay(enabled: bool | None = None) -> dict:
+    """
+    Toggle (or explicitly set) the lane-ROI debug overlay on the live stream.
+    Pass ?enabled=true/false to set explicitly; omit to flip current state.
+    Returns the new overlay state.
+    """
+    new_state = processor.toggle_debug(enabled)
+    return {"debug_overlay": new_state}
+
+
 @router.post("/calibration")
 def set_calibration(body: CalibrationBody) -> dict:
-    """Save stop-line + signal-ROI coordinates and re-initialise the red-light module."""
+    """
+    Save stop-line, signal-ROI, and optional lane polygon, then re-initialise
+    the red-light module.
+
+    lane_polygon — list of ≥3 [x, y] points defining the monitored zone.
+    Only vehicles whose bottom-centre falls inside this polygon will be
+    checked for red-light violations.  Omit (or pass null) to remove the
+    polygon and revert to whole-frame eligibility.
+    """
     if len(body.stop_line) != 2 or len(body.signal_roi) != 2:
         raise HTTPException(
             status_code=422,
             detail="stop_line and signal_roi must each contain exactly 2 points",
+        )
+    if body.lane_polygon is not None and len(body.lane_polygon) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="lane_polygon must have at least 3 points",
         )
 
     existing: dict = {}
@@ -102,9 +133,17 @@ def set_calibration(body: CalibrationBody) -> dict:
     config = {
         **existing,
         "violation_line": body.stop_line,
-        "signal_roi": body.signal_roi,
-        "calibrated": True,
+        "signal_roi":     body.signal_roi,
+        "calibrated":     True,
     }
+    if body.lane_polygon:
+        config["lane_polygon"] = body.lane_polygon
+    else:
+        config.pop("lane_polygon", None)  # explicit null removes the polygon
+
     _CONFIG_PATH.write_text(json.dumps(config, indent=2))
     processor.reinit_red_light()
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "lane_polygon_active": body.lane_polygon is not None,
+    }

@@ -37,9 +37,16 @@ class VideoProcessor:
 
     Thread model: process_video() runs in a daemon thread started by start().
     get_latest_frame() and get_stats() are safe to call from any thread.
+
+    Set debug=True (or call toggle_debug()) to draw the lane-ROI polygon and
+    per-vehicle IN/OUT status on top of the live feed.
     """
 
-    def __init__(self, config_path: str = "calibration_config.json") -> None:
+    def __init__(
+        self,
+        config_path: str = "calibration_config.json",
+        debug: bool = False,
+    ) -> None:
         self._config_path = config_path
         self._video_source: str = settings.VIDEO_SOURCE
         self._running = False
@@ -50,6 +57,7 @@ class VideoProcessor:
         self._fps: float = 0.0
         self._track_count: int = 0
         self._signal_state: str = "UNKNOWN"
+        self._debug: bool = debug
 
         model = get_primary_model()
         self._tracker = VehicleTracker(model)
@@ -143,6 +151,12 @@ class VideoProcessor:
             logger.info("Red-light module re-initialised with fresh calibration.")
         except Exception as exc:
             logger.error("Red-light re-init failed: %s", exc)
+
+    def toggle_debug(self, enabled: bool | None = None) -> bool:
+        """Toggle (or explicitly set) the debug overlay. Returns the new state."""
+        self._debug = not self._debug if enabled is None else enabled
+        logger.info("Debug overlay %s", "ENABLED" if self._debug else "DISABLED")
+        return self._debug
 
     def get_source(self) -> str:
         return self._video_source
@@ -300,16 +314,59 @@ class VideoProcessor:
             except Exception:
                 pass
 
-        # ── Vehicle boxes ──────────────────────────────────────────────────
+        # ── Lane ROI polygon (always shown when configured, even without debug) ──
+        if self._red_light is not None:
+            try:
+                poly = self._red_light._lane_polygon
+                if poly is not None:
+                    pts = poly.astype(int).reshape(-1, 1, 2)
+                    overlay = frame.copy()
+                    cv2.fillPoly(overlay, [pts], (0, 255, 255))
+                    cv2.addWeighted(overlay, 0.10, frame, 0.90, 0, frame)
+                    cv2.polylines(frame, [pts], isClosed=True,
+                                  color=(0, 255, 255), thickness=2)
+                    cv2.putText(frame, "MONITORED ZONE",
+                                (int(poly[0][0]), max(14, int(poly[0][1]) - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 255), 2)
+            except Exception:
+                pass
+
+        # ── Debug overlay (IN/OUT labels per vehicle) — only when debug=True ──
+        if self._debug and self._red_light is not None:
+            try:
+                self._red_light.draw_debug_overlay(frame, tracked)
+            except Exception:
+                pass
+
+        # ── Build violation-type map for labels ────────────────────────────
+        vtype_map: dict[int, str] = {}
+        for v in rl_violations:
+            vtype_map[v["track_id"]] = "RED"
+        for v in helmet_violations:
+            vtype_map[v["track_id"]] = "HELMET"
+        for v in speed_violations:
+            vtype_map[v["track_id"]] = "SPEED"
+
+        _VTYPE_COLOR = {
+            "RED":    (0, 0, 255),
+            "HELMET": (0, 128, 255),
+            "SPEED":  (0, 200, 255),
+        }
+
+        # ── Vehicle boxes with type-specific colours and labels ────────────
         for box in tracked:
             tid = box["track_id"]
             x1, y1, x2, y2 = (int(v) for v in box["bbox"])
-            color = _COLOR_VIOLATION if tid in violation_ids else _COLOR_OK
+            vtype = vtype_map.get(tid)
+            color = _VTYPE_COLOR.get(vtype, _COLOR_OK) if vtype else _COLOR_OK
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            label = f"{box['class_name']} #{tid}"
-            cv2.putText(frame, label, (x1, max(y1 - 6, 12)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+            base_label = f"{box['class_name']} #{tid}"
+            if vtype:
+                base_label = f"[{vtype}] {base_label}"
+            cv2.putText(frame, base_label, (x1, max(y1 - 6, 12)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
 
         # ── Signal state badge ─────────────────────────────────────────────
         sig = self._signal_state

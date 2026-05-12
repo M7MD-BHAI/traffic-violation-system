@@ -214,9 +214,9 @@ class HybridSpeedService:
 
         out_dir = Path(settings.STATIC_FILES_DIR) / "violations"
         out_dir.mkdir(parents=True, exist_ok=True)
-        path = out_dir / f"speed_{track_id}_{frame_idx}.jpg"
-        cv2.imwrite(str(path), crop)
-        return str(path)
+        filename = f"speed_{track_id}_{frame_idx}.jpg"
+        cv2.imwrite(str(out_dir / filename), crop)
+        return f"/static/violations/{filename}"
 
     def _persist(self, record: dict) -> None:
         db = SessionLocal()

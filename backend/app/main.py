@@ -33,6 +33,7 @@ from app.routes import (
     anpr,
     auth,
     optimization,
+    settings as settings_router,
     signals,
     vehicles,
     video,
@@ -100,6 +101,7 @@ app.include_router(accidents.router)
 app.include_router(signals.router)
 app.include_router(optimization.router)
 app.include_router(video.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/health", tags=["system"])
