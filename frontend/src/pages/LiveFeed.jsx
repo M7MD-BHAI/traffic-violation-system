@@ -7,7 +7,7 @@ import ViolationCard from '../components/ViolationCard';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const STREAM_URL  = `${BACKEND_URL}/video/stream`;
-const POLL_MS     = 5_000;
+const POLL_MS     = 2_000;
 
 const SIGNAL_COLOR = {
   RED:     'bg-red-600 text-white',

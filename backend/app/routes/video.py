@@ -62,6 +62,27 @@ def get_first_frame() -> Response:
     )
 
 
+@router.get("/debug")
+def get_debug() -> dict:
+    """Snapshot of the red-light detector's live state — useful for diagnosing detection issues."""
+    import app.detection.tracking.vehicle_history as vh
+    rl = processor._red_light
+    return {
+        "red_light_active": rl is not None,
+        "signal_state":     processor._signal_state,
+        "frame_fps":        round(processor._fps, 1),
+        "track_count":      processor._track_count,
+        "line_pts":         rl._line_pts if rl else None,
+        "signal_roi":       [
+            [rl._signal_detector._x1, rl._signal_detector._y1],
+            [rl._signal_detector._x2, rl._signal_detector._y2],
+        ] if rl else None,
+        "signal_v_means":   list(rl._signal_detector.last_means) if rl else None,
+        "confirmed_violation_ids": list(rl._confirmed_ids) if rl else [],
+        "y_prev_map":       dict(vh.y_prev),
+    }
+
+
 @router.post("/calibration")
 def set_calibration(body: CalibrationBody) -> dict:
     """Save stop-line + signal-ROI coordinates and re-initialise the red-light module."""

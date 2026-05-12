@@ -285,6 +285,22 @@ class VideoProcessor:
             for v in rl_violations + helmet_violations + speed_violations
         }
 
+        # ── Draw stop line from calibration ───────────────────────────────
+        if self._red_light is not None:
+            try:
+                pts = self._red_light._line_pts  # [[x1,y1],[x2,y2]]
+                p1 = (int(pts[0][0]), int(pts[0][1]))
+                p2 = (int(pts[1][0]), int(pts[1][1]))
+                # thick red line with a dark outline for contrast
+                cv2.line(frame, p1, p2, (0, 0, 0), 6)
+                cv2.line(frame, p1, p2, (0, 0, 255), 3)
+                mid = ((p1[0] + p2[0]) // 2, (p1[1] + p2[1]) // 2 - 10)
+                cv2.putText(frame, "STOP LINE", mid,
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            except Exception:
+                pass
+
+        # ── Vehicle boxes ──────────────────────────────────────────────────
         for box in tracked:
             tid = box["track_id"]
             x1, y1, x2, y2 = (int(v) for v in box["bbox"])
@@ -292,16 +308,25 @@ class VideoProcessor:
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             label = f"{box['class_name']} #{tid}"
-            cv2.putText(
-                frame, label,
-                (x1, max(y1 - 6, 12)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2,
-            )
+            cv2.putText(frame, label, (x1, max(y1 - 6, 12)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
+        # ── Signal state badge ─────────────────────────────────────────────
+        sig = self._signal_state
+        sig_color_bgr = {
+            "RED":     (0, 0, 220),
+            "GREEN":   (0, 200, 0),
+            "YELLOW":  (0, 200, 255),
+            "UNKNOWN": (100, 100, 100),
+        }.get(sig, (100, 100, 100))
+        cv2.circle(frame, (30, 22), 14, (0, 0, 0), -1)
+        cv2.circle(frame, (30, 22), 12, sig_color_bgr, -1)
+
+        # ── HUD text ───────────────────────────────────────────────────────
         cv2.putText(
             frame,
-            f"FPS:{self._fps:.1f}  Tracks:{self._track_count}  Signal:{self._signal_state}",
-            (10, 22),
+            f"FPS:{self._fps:.1f}  Tracks:{self._track_count}  Signal:{sig}",
+            (52, 28),
             cv2.FONT_HERSHEY_SIMPLEX, 0.6, _COLOR_HUD, 2,
         )
 
