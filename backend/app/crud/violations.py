@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.database.models import Violation
+from app.database.models import PlateResult, Violation
 from app.schemas.violation import ViolationCreate
 
 
@@ -63,6 +63,8 @@ def delete_violation(db: Session, violation_id: int) -> bool:
     violation = get_violation_by_id(db, violation_id)
     if not violation:
         return False
+    # Delete child plate_results first (guards against SQLite not enforcing FK cascade)
+    db.query(PlateResult).filter(PlateResult.violation_id == violation_id).delete()
     db.delete(violation)
     db.commit()
     return True

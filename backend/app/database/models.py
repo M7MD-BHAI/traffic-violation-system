@@ -51,7 +51,8 @@ class Violation(Base):
     created_at: Mapped[datetime] = mapped_column(default=func.now())
 
     plate_result: Mapped["PlateResult | None"] = relationship(
-        "PlateResult", back_populates="violation", uselist=False
+        "PlateResult", back_populates="violation", uselist=False,
+        cascade="all, delete-orphan",
     )
     merged_violation: Mapped["Violation | None"] = relationship(
         "Violation", remote_side="Violation.id"
