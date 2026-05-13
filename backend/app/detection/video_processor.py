@@ -24,6 +24,7 @@ _COLOR_VIOLATION = (0, 0, 255)  # red — violating vehicle box
 _COLOR_HUD = (255, 255, 255)    # white HUD text
 
 _DEFAULT_ROAD_ID = "main_road"
+_MOTORCYCLE_CLASS_ID = 3
 
 
 class VideoProcessor:
@@ -370,14 +371,25 @@ class VideoProcessor:
         for v in rl_violations:
             vtype_map[v["track_id"]] = "RED"
         for v in helmet_violations:
-            vtype_map[v["track_id"]] = "HELMET"
+            vtype_map[v["track_id"]] = "NO HELMET"
         for v in speed_violations:
             vtype_map[v["track_id"]] = "SPEED"
 
+        helmet_statuses = (
+            self._helmet.get_track_statuses()
+            if self._helmet is not None
+            else {}
+        )
+
         _VTYPE_COLOR = {
             "RED":    (0, 0, 255),
-            "HELMET": (0, 128, 255),
+            "NO HELMET": (0, 0, 255),
             "SPEED":  (0, 200, 255),
+        }
+        _HELMET_STATUS_COLOR = {
+            "NO_HELMET": (0, 0, 255),
+            "HELMET": (0, 220, 0),
+            "UNKNOWN": (0, 200, 255),
         }
 
         # ── Vehicle boxes with type-specific colours and labels ────────────
@@ -386,8 +398,22 @@ class VideoProcessor:
             x1, y1, x2, y2 = (int(v) for v in box["bbox"])
             vtype = vtype_map.get(tid)
             color = _VTYPE_COLOR.get(vtype, _COLOR_OK) if vtype else _COLOR_OK
+            helmet_status = (
+                helmet_statuses.get(tid)
+                if box["class_id"] == _MOTORCYCLE_CLASS_ID
+                else None
+            )
             roi_status: str | None = None
-            if vtype is None and self._red_light is not None:
+            if helmet_status is not None and (vtype is None or vtype == "NO HELMET"):
+                color = _HELMET_STATUS_COLOR.get(
+                    helmet_status.get("status", "UNKNOWN"),
+                    _COLOR_OK,
+                )
+            elif (
+                vtype is None
+                and box["class_id"] != _MOTORCYCLE_CLASS_ID
+                and self._red_light is not None
+            ):
                 try:
                     poly = self._red_light._lane_polygon
                     if poly is not None:
@@ -403,11 +429,24 @@ class VideoProcessor:
 
             base_label = f"{box['class_name']} #{tid}"
             if vtype:
-                base_label = f"[{vtype}] {base_label}"
+                if helmet_status is not None:
+                    base_label = f"[{vtype}|{helmet_status.get('label', 'HELMET ?')}] {base_label}"
+                else:
+                    base_label = f"[{vtype}] {base_label}"
+            elif helmet_status is not None:
+                conf = helmet_status.get("confidence", 0.0)
+                suffix = f" {conf:.2f}" if conf else ""
+                base_label = f"[{helmet_status.get('label', 'HELMET ?')}{suffix}] {base_label}"
             elif roi_status is not None:
                 base_label = f"[{roi_status}] {base_label}"
             cv2.putText(frame, base_label, (x1, max(y1 - 6, 12)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+
+            if helmet_status is not None:
+                hx1, hy1, hx2, hy2 = (
+                    int(v) for v in helmet_status.get("head_bbox", [x1, y1, x2, y1])
+                )
+                cv2.rectangle(frame, (hx1, hy1), (hx2, hy2), color, 1)
 
         # ── Signal state badge ─────────────────────────────────────────────
         sig = self._signal_state

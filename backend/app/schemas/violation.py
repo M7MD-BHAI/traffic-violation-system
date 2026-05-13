@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 
 class ViolationCreate(BaseModel):
@@ -37,3 +37,13 @@ class ViolationOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("timestamp", "created_at")
+    def serialize_datetime_utc(self, value: datetime) -> str:
+        """
+        SQLite returns timezone-aware values as naive datetimes. Treat stored
+        violation times as UTC so clients convert them to the correct local time.
+        """
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")

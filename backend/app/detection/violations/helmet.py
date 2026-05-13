@@ -8,31 +8,29 @@ import cv2
 import numpy as np
 
 from app.config import settings
-from app.detection.yolo_loader import get_helmet_model
 from app.crud.violations import insert_violation
 from app.database.connection import SessionLocal
 from app.detection.tracking.vehicle_tracker import TrackedBox, VehicleTracker
+from app.detection.yolo_loader import get_helmet_model
 from app.schemas.violation import ViolationCreate
 
 logger = logging.getLogger(__name__)
 
 _MOTORCYCLE_CLASS_ID = 3
 _VOTE_WINDOW = 15
-_VOTE_THRESHOLD = 0.70    # 11/15 frames bare → confirmed violation
+_VOTE_THRESHOLD = 0.70
+_HELMET_CONF_THRESHOLD = 0.25
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
 
 class HelmetViolationDetector:
     """
-    M2 — Helmet Violation Detection.
+    M2 - Helmet Violation Detection.
 
-    Two-stage hierarchical approach:
-      1. Primary YOLO detects motorcycles → provides bbox + track_id
-      2. Helmet model runs ONLY on the top-25% head-zone crop of each motorcycle
-    Temporal voting over 15 frames prevents single-frame false positives.
-    On confirmed violation, a composite image (full moto | head crop) is saved
-    and ANPR is triggered asynchronously with the full motorcycle bbox.
+    The module runs globally for every tracked motorcycle in the frame. It does
+    not use the red-light monitored zone. The custom helmet model is applied
+    only to the top 25% motorcycle head-zone crop.
     """
 
     def __init__(
@@ -47,22 +45,23 @@ class HelmetViolationDetector:
         self._tracker = VehicleTracker(primary_model)
         self._helmet_model = get_helmet_model()
         self._bare_head_classes = self._resolve_bare_head_classes()
+        self._helmet_classes = self._resolve_helmet_classes()
         logger.info(
-            "Helmet model loaded from %s; bare-head classes=%s",
+            "Helmet model loaded from %s; bare-head classes=%s; helmet classes=%s",
             helmet_model_path,
             sorted(self._bare_head_classes),
+            sorted(self._helmet_classes),
         )
 
-        # track_id → sliding window of bool votes (bare_head detected in that frame?)
         self._vote_buffer: dict[int, deque[bool]] = {}
         self._confirmed_ids: set[int] = set()
-
-        # Registered red-light violations keyed by track_id for merge logic
+        self._track_status: dict[int, dict] = {}
         self._rl_violations: dict[int, dict] = {}
 
         self._anpr = None
         try:
             from app.detection.anpr.plate_reader import ANPR_Service  # noqa: PLC0415
+
             self._anpr = ANPR_Service(
                 plate_model_path=settings.YOLO_PLATE_MODEL_PATH,
                 ocr_languages=["en"],
@@ -75,6 +74,7 @@ class HelmetViolationDetector:
         """Clear per-track helmet voting state when a video source/replay restarts."""
         self._vote_buffer.clear()
         self._confirmed_ids.clear()
+        self._track_status.clear()
         self._rl_violations.clear()
         logger.info("Helmet detector track state reset.")
 
@@ -91,16 +91,35 @@ class HelmetViolationDetector:
                 "bare" in normalised
                 or "without" in normalised
                 or "no helmet" in normalised
+                or "nohelmet" in normalised
                 or "non helmet" in normalised
+                or "nonhelmet" in normalised
             ):
                 bare_ids.add(int(class_id))
         return bare_ids or {1}
 
+    def _resolve_helmet_classes(self) -> set[int]:
+        """Detect helmet/wearing-helmet class IDs from model metadata."""
+        names = getattr(self._helmet_model, "names", {}) or {}
+        helmet_ids: set[int] = set()
+        for class_id, label in names.items():
+            cid = int(class_id)
+            if cid in self._bare_head_classes:
+                continue
+            normalised = str(label).lower().replace("_", " ").replace("-", " ")
+            if "helmet" in normalised or normalised.strip() in {"helmet", "with"}:
+                helmet_ids.add(cid)
+        return helmet_ids or ({0} if 0 not in self._bare_head_classes else set())
+
+    def get_track_statuses(self) -> dict[int, dict]:
+        """Return latest helmet status per motorcycle for live overlays."""
+        return dict(self._track_status)
+
     def register_existing_violations(self, violations: dict[int, dict]) -> None:
         """
         Called by video_processor after M1 runs each frame.
-        Keeps the RL violation registry current so M2 can merge records
-        instead of creating duplicates for the same vehicle.
+        Keeps the RL violation registry current so M2 can merge records instead
+        of creating duplicates for the same vehicle.
         """
         self._rl_violations.update(violations)
 
@@ -114,6 +133,11 @@ class HelmetViolationDetector:
             tracked = self._tracker.update(frame)
         motos = [b for b in tracked if b["class_id"] == _MOTORCYCLE_CLASS_ID]
 
+        active_moto_ids = {b["track_id"] for b in motos}
+        for stale_id in list(self._track_status.keys()):
+            if stale_id not in active_moto_ids:
+                self._track_status.pop(stale_id, None)
+
         if not motos:
             return []
 
@@ -123,42 +147,46 @@ class HelmetViolationDetector:
             tid = box["track_id"]
             x1, y1, x2, y2 = (int(v) for v in box["bbox"])
             height = y2 - y1
-
-            # ── Head-zone: exactly top 25% of motorcycle bbox ──────────────
             head_y2 = y1 + (height // 4)
             head_roi = frame[y1:head_y2, x1:x2]
-
             buf = self._vote_buffer.setdefault(tid, deque(maxlen=_VOTE_WINDOW))
 
             if head_roi.size == 0:
-                # Bbox too small to crop — vote False (safer default: assume helmet)
                 buf.append(False)
+                self._set_status(tid, "UNKNOWN", 0.0, [x1, y1, x2, y2], [x1, y1, x2, head_y2], frame_idx, buf)
                 continue
 
-            # ── Secondary helmet model on head-zone crop only ───────────────
             bare_count = 0
+            helmet_count = 0
+            best_conf = 0.0
             try:
                 results = self._helmet_model(head_roi, verbose=False)
                 if results and results[0].boxes is not None:
                     for det in results[0].boxes:
-                        if int(det.cls[0]) in self._bare_head_classes:
+                        conf = float(det.conf[0]) if getattr(det, "conf", None) is not None else 0.0
+                        if conf < _HELMET_CONF_THRESHOLD:
+                            continue
+                        cls_id = int(det.cls[0])
+                        best_conf = max(best_conf, conf)
+                        if cls_id in self._bare_head_classes:
                             bare_count += 1
-                # No boxes returned → treat as helmet present (safer default)
+                        elif cls_id in self._helmet_classes:
+                            helmet_count += 1
             except Exception as exc:
                 logger.warning("Helmet inference error track_id=%d: %s", tid, exc)
 
-            buf.append(bare_count > 0)
+            bare_detected = bare_count > 0
+            buf.append(bare_detected)
+            status = "NO_HELMET" if bare_detected else "HELMET" if helmet_count > 0 else "UNKNOWN"
+            self._set_status(tid, status, best_conf, [x1, y1, x2, y2], [x1, y1, x2, head_y2], frame_idx, buf)
 
-            # Wait until the window is fully populated before deciding
             if len(buf) < _VOTE_WINDOW:
                 continue
 
             ratio = sum(buf) / _VOTE_WINDOW
-
             if ratio < _VOTE_THRESHOLD or tid in self._confirmed_ids:
                 continue
 
-            # ── Confirmed violation ─────────────────────────────────────────
             self._confirmed_ids.add(tid)
 
             head_crop = frame[y1:head_y2, x1:x2]
@@ -172,16 +200,16 @@ class HelmetViolationDetector:
             )
 
             record: dict = {
-                "track_id":         tid,
-                "violation_type":   "HELMET",
+                "track_id": tid,
+                "violation_type": "HELMET",
                 "confidence_score": round(ratio, 4),
-                "timestamp":        datetime.now(timezone.utc).isoformat(),
-                "frame_idx":        frame_idx,
-                "image_path":       image_path,
-                "bare_head_count":  bare_count,
-                "merged_with_rl":   merged_with_rl,
-                "merged_with_id":   merged_with_id,
-                "bbox":             [x1, y1, x2, y2],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "frame_idx": frame_idx,
+                "image_path": image_path,
+                "bare_head_count": bare_count,
+                "merged_with_rl": merged_with_rl,
+                "merged_with_id": merged_with_id,
+                "bbox": [x1, y1, x2, y2],
             }
 
             if self._anpr is not None:
@@ -199,21 +227,45 @@ class HelmetViolationDetector:
         return violations
 
     def get_moto_crop_for_anpr(self, frame: np.ndarray, violation: dict) -> np.ndarray:
-        """Return the full motorcycle crop — ANPR needs the plate area, not the head zone."""
+        """Return the full motorcycle crop; ANPR needs the plate area."""
         x1, y1, x2, y2 = (int(v) for v in violation["bbox"])
         return frame[y1:y2, x1:x2]
 
     @staticmethod
     def build_api_payload(violation: dict, frame_path: str) -> dict:
         return {
-            "track_id":         violation["track_id"],
-            "violation_type":   "HELMET",
+            "track_id": violation["track_id"],
+            "violation_type": "HELMET",
             "confidence_score": violation["confidence_score"],
-            "timestamp":        violation["timestamp"],
-            "frame_path":       frame_path,
+            "timestamp": violation["timestamp"],
+            "frame_path": frame_path,
         }
 
-    # ── Private helpers ────────────────────────────────────────────────────
+    def _set_status(
+        self,
+        track_id: int,
+        status: str,
+        confidence: float,
+        bbox: list[int],
+        head_bbox: list[int],
+        frame_idx: int,
+        votes: deque[bool],
+    ) -> None:
+        labels = {
+            "NO_HELMET": "NO HELMET",
+            "HELMET": "HELMET OK",
+            "UNKNOWN": "HELMET ?",
+        }
+        self._track_status[track_id] = {
+            "status": status,
+            "label": labels.get(status, "HELMET ?"),
+            "confidence": round(confidence, 4),
+            "bbox": bbox,
+            "head_bbox": head_bbox,
+            "frame_idx": frame_idx,
+            "bare_votes": sum(votes),
+            "vote_window": len(votes),
+        }
 
     def _save_composite(
         self,
@@ -223,10 +275,9 @@ class HelmetViolationDetector:
         track_id: int,
         frame_idx: int,
     ) -> str:
-        """Save side-by-side composite: full motorcycle (left) | head crop (right)."""
+        """Save side-by-side composite: full motorcycle (left) and head crop (right)."""
         x1, y1, x2, y2 = bbox
         moto_crop = frame[y1:y2, x1:x2]
-
         target_h = 200
 
         def _fit_height(img: np.ndarray) -> np.ndarray:
@@ -278,9 +329,9 @@ class HelmetViolationDetector:
         except Exception as exc:
             logger.error(
                 "DB persist failed for helmet violation track_id=%d: %s",
-                record["track_id"], exc,
+                record["track_id"],
+                exc,
             )
-            # Spec: merged violation fails → create new record as fallback
             if record.get("merged_with_id") is not None:
                 try:
                     violation = insert_violation(
