@@ -3,20 +3,50 @@ import { useNavigate } from 'react-router-dom';
 import { login } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 
+const Icon = {
+  camera: (
+    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.8 6.2A2.3 2.3 0 015.2 7.2c-.4.1-.8.1-1.1.2-1.1.2-1.9 1.1-1.9 2.2V18a2.3 2.3 0 002.3 2.3h15A2.3 2.3 0 0021.8 18V9.6c0-1.1-.8-2-1.9-2.2l-1.1-.2a2.3 2.3 0 01-1.6-1l-.8-1.3a2.2 2.2 0 00-1.8-1.1 48.8 48.8 0 00-5.2 0 2.2 2.2 0 00-1.8 1.1l-.9 1.3z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.8a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+    </svg>
+  ),
+  moon: (
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.9}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21.8 15A9.7 9.7 0 0118 15.8 9.8 9.8 0 018.3 6c0-1.3.3-2.6.7-3.8A9.8 9.8 0 003 11.3 9.8 9.8 0 0012.8 21a9.8 9.8 0 009-6z" />
+    </svg>
+  ),
+  sun: (
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.9}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.3m6.4.3l-1.6 1.6M21 12h-2.3m-.3 6.4l-1.6-1.6M12 18.8V21m-4.8-4.2l-1.6 1.6M5.3 12H3m4.2-4.8L5.6 5.6M15.8 12a3.8 3.8 0 11-7.6 0 3.8 3.8 0 017.6 0z" />
+    </svg>
+  ),
+  lock: (
+    <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.9}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.8a4.5 4.5 0 10-9 0v3.7m-.8 10h10.6a2.2 2.2 0 002.2-2.2v-5.6a2.2 2.2 0 00-2.2-2.2H6.7a2.2 2.2 0 00-2.2 2.2v5.6a2.2 2.2 0 002.2 2.2z" />
+    </svg>
+  ),
+};
+
+const metrics = [
+  { label: 'Signals synced', value: '04', tone: 'var(--green)' },
+  { label: 'AI modules', value: '09', tone: 'var(--accent)' },
+  { label: 'ANPR ready', value: 'ON', tone: 'var(--yellow)' },
+];
+
 export default function Login() {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
-  const [form,    setForm]    = useState({ username: '', password: '' });
-  const [error,   setError]   = useState('');
+  const [form, setForm] = useState({ username: '', password: '' });
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleChange = e => {
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  const handleChange = (event) => {
+    setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }));
     setError('');
   };
 
-  const handleSubmit = async e => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     if (!form.username.trim() || !form.password.trim()) {
       setError('Username and password are required.');
       return;
@@ -24,156 +54,137 @@ export default function Login() {
     setLoading(true);
     try {
       await login(form.username.trim(), form.password);
+      localStorage.setItem('username', form.username.trim());
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      setError(detail || 'Invalid credentials.');
+      setError(err.response?.data?.detail || 'Invalid credentials.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div
-      className="min-h-screen grid-bg flex items-center justify-center px-4 relative overflow-hidden"
-      style={{ backgroundColor: 'var(--bg)' }}
-    >
-      {/* Ambient glow blobs */}
-      <div
-        className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-10 pointer-events-none"
-        style={{ backgroundColor: 'var(--accent)' }}
-      />
-      <div
-        className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full blur-3xl opacity-8 pointer-events-none"
-        style={{ backgroundColor: 'var(--accent)' }}
-      />
-
-      {/* Theme toggle */}
-      <button
-        onClick={toggle}
-        className="absolute top-5 right-5 w-9 h-9 rounded-full flex items-center justify-center transition-colors"
-        style={{ backgroundColor: 'var(--surface)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
-        title="Toggle theme"
-      >
-        {theme === 'dark' ? (
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
-          </svg>
-        ) : (
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-          </svg>
-        )}
-      </button>
-
-      {/* Login card */}
-      <div className="w-full max-w-sm animate-fade-up">
-
-        {/* Brand */}
-        <div className="text-center mb-8">
-          <div
-            className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
-            style={{ backgroundColor: 'var(--accent-dim)', color: 'var(--accent)' }}
-          >
-            <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
-            </svg>
-          </div>
-          <h1
-            className="font-display font-black text-2xl tracking-tight"
-            style={{ color: 'var(--text)' }}
-          >
-            TrafficIQ
-          </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
-            Sign in to your monitoring account
-          </p>
+    <div className="min-h-screen auth-shell">
+      <header className="auth-header">
+        <div className="brand-lockup">
+          <span className="brand-mark">{Icon.camera}</span>
+          <span>
+            <strong>TrafficIQ</strong>
+            <small>Violation Intelligence Suite</small>
+          </span>
         </div>
+        <nav className="auth-nav" aria-label="System capabilities">
+          <span>Detection</span>
+          <span>ANPR</span>
+          <span>Optimization</span>
+        </nav>
+        <button className="icon-button" onClick={toggle} type="button" title="Toggle theme">
+          {theme === 'dark' ? Icon.sun : Icon.moon}
+        </button>
+      </header>
 
-        {/* Form card */}
-        <div
-          className="rounded-2xl p-7"
-          style={{
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.3)',
-          }}
-        >
-          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+      <main className="auth-main">
+        <section className="auth-visual animate-fade-up" aria-label="Traffic operations overview">
+          <div className="auth-map-panel">
+            <div className="map-grid" />
+            <div className="road road-a" />
+            <div className="road road-b" />
+            <div className="road road-c" />
+            <span className="hotspot hotspot-a" />
+            <span className="hotspot hotspot-b" />
+            <span className="hotspot hotspot-c" />
+            <div className="signal-stack">
+              <span className="sig-red" />
+              <span className="sig-yellow" />
+              <span className="sig-green active" />
+            </div>
+            <div className="map-caption">
+              <span>Live corridor</span>
+              <strong>Central Monitoring</strong>
+            </div>
+          </div>
 
-            {/* Error */}
-            {error && (
-              <div
-                className="flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm animate-fade-in"
-                style={{ backgroundColor: 'var(--red-dim)', border: '1px solid var(--red)', color: 'var(--red)' }}
-              >
-                <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-.75-11.25a.75.75 0 011.5 0v4.5a.75.75 0 01-1.5 0v-4.5zm.75 7.5a.75.75 0 100-1.5.75.75 0 000 1.5z" clipRule="evenodd" />
-                </svg>
-                <span>{error}</span>
+          <div className="auth-copy">
+            <span className="eyebrow">Real-time traffic command</span>
+            <h1>Secure access for smarter road enforcement.</h1>
+            <p>
+              Monitor red-light, helmet, speeding, accident, congestion, and license plate events from one polished operations desk.
+            </p>
+          </div>
+
+          <div className="auth-metrics">
+            {metrics.map((item) => (
+              <div key={item.label}>
+                <span style={{ color: item.tone }}>{item.value}</span>
+                <small>{item.label}</small>
               </div>
-            )}
+            ))}
+          </div>
+        </section>
 
-            {/* Username */}
+        <section className="auth-card animate-fade-up delay-100">
+          <div className="auth-card-head">
             <div>
-              <label
-                htmlFor="username"
-                className="block text-xs font-semibold uppercase tracking-widest mb-2"
-                style={{ color: 'var(--text-2)' }}
-              >
-                Username
-              </label>
+              <span className="eyebrow">Operator portal</span>
+              <h2>Sign in</h2>
+            </div>
+            <span className="secure-pill">{Icon.lock} Secure</span>
+          </div>
+
+          {error && <div className="form-error">{error}</div>}
+
+          <form onSubmit={handleSubmit} noValidate className="auth-form">
+            <label>
+              <span>Username</span>
               <input
-                id="username" name="username" type="text"
-                autoComplete="username" autoFocus
-                value={form.username} onChange={handleChange} disabled={loading}
+                className="input-field"
+                id="username"
+                name="username"
+                type="text"
+                autoComplete="username"
+                autoFocus
+                value={form.username}
+                onChange={handleChange}
+                disabled={loading}
                 placeholder="Enter username"
-                className="input-field"
               />
-            </div>
+            </label>
 
-            {/* Password */}
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-xs font-semibold uppercase tracking-widest mb-2"
-                style={{ color: 'var(--text-2)' }}
-              >
-                Password
-              </label>
+            <label>
+              <span>Password</span>
               <input
-                id="password" name="password" type="password"
-                autoComplete="current-password"
-                value={form.password} onChange={handleChange} disabled={loading}
-                placeholder="Enter password"
                 className="input-field"
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={form.password}
+                onChange={handleChange}
+                disabled={loading}
+                placeholder="Enter password"
               />
+            </label>
+
+            <div className="form-row">
+              <label className="check-line">
+                <input type="checkbox" defaultChecked />
+                <span>Keep session active</span>
+              </label>
+              <span>FYP 2026</span>
             </div>
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary w-full py-2.5 mt-1 font-display font-bold tracking-wide"
-            >
-              {loading ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  Authenticating…
-                </>
-              ) : 'Sign In'}
+            <button type="submit" disabled={loading} className="btn btn-primary auth-submit">
+              {loading ? 'Authenticating...' : 'Open Dashboard'}
             </button>
           </form>
-        </div>
+        </section>
+      </main>
 
-        <p className="text-center text-xs mt-6" style={{ color: 'var(--text-3)' }}>
-          Traffic Violation Detection System · FYP 2026
-        </p>
-      </div>
+      <footer className="auth-footer">
+        <span>Traffic Violation Detection System</span>
+        <span>Privacy-aware ANPR</span>
+        <span>FastAPI + React Control Center</span>
+      </footer>
     </div>
   );
 }
